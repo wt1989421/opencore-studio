@@ -169,7 +169,7 @@ export const App: React.FC = () => {
 
   const activeTitle =
     activeModule === "hardware"
-      ? "硬件检测与智能生成 EFI"
+      ? "关于本机与全网成功案例雷达"
       : activeModule === "toolbox"
       ? "排错诊断与声卡工具箱"
       : isClover
@@ -260,7 +260,7 @@ export const App: React.FC = () => {
             }`}
           >
             <SquircleIcon icon={Radar} color="orange" />
-            <span>硬件检测与一键生成</span>
+            <span>本机硬件与成功案例</span>
           </button>
 
           <button

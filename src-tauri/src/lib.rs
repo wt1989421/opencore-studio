@@ -1,4 +1,5 @@
 pub mod clover;
+pub mod community_cases;
 pub mod efi_scanner;
 pub mod hw_advisor;
 pub mod plist_engine;
@@ -12,6 +13,7 @@ use clover::{
     generate_tailored_clover_efi, list_clover_presets, migrate_clover_to_opencore,
     scan_and_sync_clover_dir, validate_clover_config, BootloaderKind, MigrationSummary,
 };
+use community_cases::{search_community_cases, CommunityEfiCase};
 use efi_scanner::{
     create_snapshot_backup, list_snapshot_backups, resolve_efi_paths, scan_oc_directory,
     sync_scan_into_plist, BackupSnapshot, EfiScanResult,
@@ -269,6 +271,14 @@ fn cmd_evaluate_hardware(profile: HardwareProfile) -> CompatibilityReport {
 }
 
 #[tauri::command]
+fn cmd_search_community_cases(
+    custom_query: Option<String>,
+    profile: Option<HardwareProfile>,
+) -> (String, Vec<CommunityEfiCase>) {
+    search_community_cases(custom_query.as_deref(), profile.as_ref())
+}
+
+#[tauri::command]
 fn cmd_generate_efi_from_hardware(
     profile: HardwareProfile,
     output_dir: Option<String>,
@@ -354,6 +364,7 @@ pub fn run() {
             cmd_probe_hardware,
             cmd_list_sample_hardware,
             cmd_evaluate_hardware,
+            cmd_search_community_cases,
             cmd_generate_efi_from_hardware,
             cmd_analyze_boot_log,
             cmd_search_applealc,

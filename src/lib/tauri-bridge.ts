@@ -4,6 +4,7 @@ import type {
   AudioCodecEntry,
   BackupSnapshot,
   BootLogDiagnosis,
+  CommunityEfiCase,
   CompatibilityReport,
   EfiScanResult,
   EspPartitionInfo,
@@ -164,6 +165,16 @@ export async function apiListSampleHardware(): Promise<HardwareProfile[]> {
 
 export async function apiEvaluateHardware(profile: HardwareProfile): Promise<CompatibilityReport> {
   return invoke<CompatibilityReport>("cmd_evaluate_hardware", { profile });
+}
+
+export async function apiSearchCommunityCases(
+  customQuery?: string | null,
+  profile?: HardwareProfile | null
+): Promise<[string, CommunityEfiCase[]]> {
+  return invoke<[string, CommunityEfiCase[]]>("cmd_search_community_cases", {
+    customQuery: customQuery ?? null,
+    profile: profile ?? null,
+  });
 }
 
 export async function apiGenerateEfiFromHardware(

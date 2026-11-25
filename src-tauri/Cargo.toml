@@ -1,6 +1,6 @@
 [package]
 name = "opencore-studio"
-version = "0.4.0"
+version = "0.5.0"
 description = "Cross-platform all-in-one Hackintosh & OpenCore configuration studio"
 authors = ["OpenCore Studio"]
 edition = "2021"

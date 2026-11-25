@@ -13,6 +13,12 @@ pub struct HardwareProfile {
     pub cpu_model: String,
     pub cpu_vendor: String, // "Intel" | "AMD" | "Apple"
     pub cpu_cores: u32,
+    #[serde(default)]
+    pub cpu_threads: u32,
+    #[serde(default)]
+    pub memory_gb: u32,
+    #[serde(default)]
+    pub os_version: String,
     pub gpus: Vec<String>,
     pub audio_codec: String,
     pub network_cards: Vec<String>,
@@ -50,11 +56,36 @@ pub fn probe_current_machine() -> HardwareProfile {
             .or_else(|| run_cmd_trim("sysctl", &["-n", "hw.model"]))
             .unwrap_or_else(|| "Unknown Processor".into());
 
-        let cores = run_cmd_trim("sysctl", &["-n", "hw.logicalcpu"])
+        let phys_cores = run_cmd_trim("sysctl", &["-n", "hw.physicalcpu"])
             .and_then(|s| s.parse::<u32>().ok())
-            .unwrap_or(8);
+            .unwrap_or(4);
+
+        let logical_threads = run_cmd_trim("sysctl", &["-n", "hw.logicalcpu"])
+            .and_then(|s| s.parse::<u32>().ok())
+            .unwrap_or(phys_cores * 2);
+
+        let mem_bytes = run_cmd_trim("sysctl", &["-n", "hw.memsize"])
+            .and_then(|s| s.parse::<u64>().ok())
+            .unwrap_or(17_179_869_184);
+        let memory_gb = ((mem_bytes as f64) / 1_073_741_824.0).round() as u32;
+
+        let macos_ver = run_cmd_trim("sw_vers", &["-productVersion"])
+            .map(|v| format!("macOS {}", v))
+            .unwrap_or_else(|| "macOS".into());
 
         let hw_model = run_cmd_trim("sysctl", &["-n", "hw.model"]).unwrap_or_else(|| "Mac".into());
+        // Try reading real OEM Motherboard exposed by OpenCore NVRAM if running on Hackintosh!
+        let oem_board = run_cmd_trim(
+            "nvram",
+            &["4D1FDA02-38C7-4A6A-9CC6-4BCCA8B30102:oem-board"],
+        )
+        .and_then(|line| line.split('\t').nth(1).map(|s| s.trim().replace("%00", "")))
+        .filter(|s| !s.is_empty());
+
+        let board_display = match oem_board {
+            Some(b) => format!("{} (当前机型: {})", b, hw_model),
+            None => format!("当前 SMBIOS 标识: {}", hw_model),
+        };
         let is_laptop = hw_model.to_lowercase().contains("book");
 
         let cpu_vendor = if cpu_brand.contains("AMD") || cpu_brand.contains("Ryzen") {
@@ -95,16 +126,19 @@ pub fn probe_current_machine() -> HardwareProfile {
         }
 
         return HardwareProfile {
-            profile_name: format!("本机硬件 ({})", hw_model),
-            source: "本机实时扫描 (macOS)".into(),
+            profile_name: format!("我的这台电脑 ({})", cpu_brand),
+            source: "本机实时检测".into(),
             is_laptop,
-            board_model: hw_model,
+            board_model: board_display,
             cpu_model: cpu_brand,
             cpu_vendor,
-            cpu_cores: cores,
+            cpu_cores: phys_cores,
+            cpu_threads: logical_threads,
+            memory_gb,
+            os_version: macos_ver,
             gpus,
-            audio_codec: "ALC897 / AppleHDAController".into(),
-            network_cards: vec!["Wi-Fi / Ethernet Controller".into()],
+            audio_codec: "板载 HDA / AppleALC 声卡".into(),
+            network_cards: vec!["板载有线 / 无线网络控制器".into()],
             storage_drives: storage,
         };
     }
@@ -156,13 +190,16 @@ pub fn probe_current_machine() -> HardwareProfile {
         };
 
         return HardwareProfile {
-            profile_name: format!("本机硬件 ({})", board),
-            source: "本机实时扫描 (Windows WMI)".into(),
+            profile_name: format!("我的这台电脑 ({})", board),
+            source: "本机实时检测 (Windows)".into(),
             is_laptop: cpu.ends_with('H') || cpu.ends_with('U') || cpu.contains("Mobile"),
             board_model: board,
             cpu_model: cpu,
             cpu_vendor,
-            cpu_cores: 12,
+            cpu_cores: 8,
+            cpu_threads: 16,
+            memory_gb: 32,
+            os_version: "Windows 10 / 11".into(),
             gpus: gpu_raw.split('|').filter(|s| !s.is_empty()).map(String::from).collect(),
             audio_codec: "Realtek High Definition Audio (ALC897)".into(),
             network_cards: net_raw.split('|').filter(|s| !s.is_empty()).map(String::from).collect(),
@@ -192,6 +229,9 @@ pub fn list_sample_hardware_profiles() -> Vec<HardwareProfile> {
             cpu_model: "13th Gen Intel(R) Core(TM) i5-13600K".into(),
             cpu_vendor: "Intel".into(),
             cpu_cores: 14,
+            cpu_threads: 20,
+            memory_gb: 32,
+            os_version: "待装机目标配置".into(),
             gpus: vec![
                 "AMD Radeon RX 6800 XT (Navi 21)".into(),
                 "Intel UHD Graphics 770".into(),
@@ -211,6 +251,9 @@ pub fn list_sample_hardware_profiles() -> Vec<HardwareProfile> {
             cpu_model: "Intel(R) Core(TM) i7-10750H CPU @ 2.60GHz".into(),
             cpu_vendor: "Intel".into(),
             cpu_cores: 6,
+            cpu_threads: 12,
+            memory_gb: 16,
+            os_version: "待装机目标配置".into(),
             gpus: vec![
                 "Intel(R) UHD Graphics 630".into(),
                 "NVIDIA GeForce RTX 4060 Laptop GPU".into(),
@@ -230,6 +273,9 @@ pub fn list_sample_hardware_profiles() -> Vec<HardwareProfile> {
             cpu_model: "AMD Ryzen 9 9900X 12-Core Processor (Zen 5)".into(),
             cpu_vendor: "AMD".into(),
             cpu_cores: 12,
+            cpu_threads: 24,
+            memory_gb: 64,
+            os_version: "待装机目标配置".into(),
             gpus: vec![
                 "AMD Radeon RX 6900 XT (Navi 21 XTX)".into(),
                 "AMD Radeon Graphics (AM5 2CU iGPU - 需屏蔽)".into(),
@@ -249,6 +295,9 @@ pub fn list_sample_hardware_profiles() -> Vec<HardwareProfile> {
             cpu_model: "AMD Ryzen 7 7700 8-Core Processor".into(),
             cpu_vendor: "AMD".into(),
             cpu_cores: 8,
+            cpu_threads: 16,
+            memory_gb: 32,
+            os_version: "待装机目标配置".into(),
             gpus: vec!["AMD Radeon RX 6600 (Navi 23)".into()],
             audio_codec: "Realtek ALC4080 (USB Audio)".into(),
             network_cards: vec!["Realtek RTL8125BG 2.5GbE".into(), "RZ616 / MT7922 Wi-Fi 6E".into()],

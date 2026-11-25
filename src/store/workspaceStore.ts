@@ -106,8 +106,8 @@ let toastSeq = 1;
 
 export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   bootloader: "OpenCore",
-  activeModule: "editor",
-  activeEditorTab: "ACPI",
+  activeModule: "hardware",
+  activeEditorTab: "PlatformInfo",
   activeCloverTab: "ACPI",
   toolboxTab: "log",
 

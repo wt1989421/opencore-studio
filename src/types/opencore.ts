@@ -88,10 +88,27 @@ export interface HardwareProfile {
   cpu_model: string;
   cpu_vendor: string;
   cpu_cores: number;
+  cpu_threads?: number;
+  memory_gb?: number;
+  os_version?: string;
   gpus: string[];
   audio_codec: string;
   network_cards: string[];
   storage_drives: string[];
+}
+
+export interface CommunityEfiCase {
+  repo_full_name: string;
+  html_url: string;
+  stars: number;
+  updated_at: string;
+  bootloader: string;
+  macos_tested: string;
+  hardware_tags: string[];
+  description: string;
+  match_badge: string;
+  recommended_preset_id: string;
+  source_kind: string;
 }
 
 export interface ComponentAdvice {
