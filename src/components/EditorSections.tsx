@@ -16,6 +16,7 @@ import {
   SIP_PRESETS,
 } from "../data/quirks-encyclopedia";
 import {
+  apiApplyAmdVanillaPatches,
   apiApplyQuickFix,
   apiGenerateSmbios,
   apiListSmbiosModels,
@@ -483,7 +484,9 @@ export const KernelSection: React.FC = () => {
   const { plist, ocDir, updatePlistPath, replacePlist, setIssues, pushToast } =
     useWorkspaceStore();
   const kexts = getArray(plist, ["Kernel", "Add"]);
+  const kernelPatches = getArray(plist, ["Kernel", "Patch"]);
   const cpuidData = getData(plist, ["Kernel", "Emulate", "Cpuid1Data"]);
+  const [amdCores, setAmdCores] = useState<number>(12);
 
   const moveKext = (idx: number, delta: number) => {
     const target = idx + delta;
@@ -605,6 +608,85 @@ export const KernelSection: React.FC = () => {
             </tbody>
           </table>
         </div>
+      </div>
+
+      {/* AMD Ryzen (Zen ~ Zen 5 / 9900X) Core Count Patch Generator */}
+      <div className="bg-gradient-to-r from-orange-950/30 via-zinc-900/70 to-rose-950/25 border border-orange-500/35 rounded-xl p-4 space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-semibold text-orange-200">
+              AMD Ryzen (含 Zen 5 9900X / 9950X) 核心数补丁自动换算器 (AMD_Vanilla)
+            </h3>
+            <p className="text-xs text-zinc-400 mt-0.5">
+              自动计算物理核心数对应的十六进制 <code className="text-orange-300 font-mono">BA {amdCores.toString(16).padStart(2, "0").toUpperCase()} 00 00 00 90</code> 补丁，12核及以上双 CCD 锐龙自动追加 <code className="text-zinc-200">AppleMCEReporterDisabler.kext</code>
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {[
+              { c: 6, label: "6核 (5600/7600/9600X)" },
+              { c: 8, label: "8核 (5800X/7700/9700X)" },
+              { c: 12, label: "12核 (5900X/7900X/9900X)" },
+              { c: 16, label: "16核 (5950X/7950X/9950X)" },
+            ].map((opt) => (
+              <button
+                key={opt.c}
+                type="button"
+                onClick={() => setAmdCores(opt.c)}
+                className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition ${
+                  amdCores === opt.c
+                    ? "bg-orange-600 text-white border-orange-500"
+                    : "bg-zinc-900 text-zinc-300 border-zinc-700 hover:bg-zinc-800"
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={async () => {
+                if (!isTauriRuntime()) return;
+                const [nextPlist, nextIssues] = await apiApplyAmdVanillaPatches(
+                  plist,
+                  amdCores,
+                  ocDir
+                );
+                replacePlist(nextPlist);
+                setIssues(nextIssues);
+                pushToast(
+                  "success",
+                  `已写入 ${amdCores} 核 (0x${amdCores.toString(16).padStart(2, "0").toUpperCase()}) AMD_Vanilla 补丁${
+                    amdCores >= 12 ? " 并启用双CCD防崩溃驱动 AppleMCEReporterDisabler" : ""
+                  }！`
+                );
+              }}
+              className="px-3.5 py-1.5 rounded-lg bg-orange-600 hover:bg-orange-500 text-xs font-semibold text-white shadow"
+            >
+              一键写入 {amdCores} 核补丁
+            </button>
+          </div>
+        </div>
+
+        {kernelPatches.length > 0 && (
+          <div className="pt-2 border-t border-zinc-800/80 space-y-1.5">
+            <div className="text-[11px] text-zinc-400">
+              当前已启用 <strong className="text-zinc-200">{kernelPatches.length}</strong> 条 Kernel -&gt; Patch 内核二进制补丁：
+            </div>
+            <div className="space-y-1 max-h-40 overflow-y-auto">
+              {kernelPatches.map((p, idx) => (
+                <div
+                  key={idx}
+                  className="px-2.5 py-1.5 rounded bg-zinc-950/80 border border-zinc-800 flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono"
+                >
+                  <span className="text-zinc-300 truncate max-w-md">{getStr(p, ["Comment"])}</span>
+                  <span className="text-pink-300">
+                    Find: {getData(p, ["Find"])} -&gt; Replace:{" "}
+                    <strong className="text-emerald-300">{getData(p, ["Replace"])}</strong>
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* CPUID Spoofing Helper */}

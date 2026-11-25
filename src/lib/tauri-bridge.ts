@@ -134,6 +134,18 @@ export async function apiMigrateCloverToOpenCore(
   return invoke<[LoadedWorkspacePayload, string[]]>("cmd_migrate_clover_to_opencore", { plist });
 }
 
+export async function apiApplyAmdVanillaPatches(
+  plist: PlistNode,
+  coreCount: number,
+  ocDir?: string | null
+): Promise<[PlistNode, ValidationIssue[]]> {
+  return invoke<[PlistNode, ValidationIssue[]]>("cmd_apply_amd_vanilla_patches", {
+    plist,
+    coreCount,
+    ocDir: ocDir ?? null,
+  });
+}
+
 export async function apiListSmbiosModels(): Promise<SmbiosModelOption[]> {
   return invoke<SmbiosModelOption[]>("cmd_list_smbios_models");
 }

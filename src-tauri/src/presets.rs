@@ -28,9 +28,16 @@ pub fn list_presets() -> Vec<PresetMeta> {
             recommended_smbios: "MacPro7,1".into(),
         },
         PresetMeta {
+            id: "amd_ryzen_9900x_zen5".into(),
+            name: "AMD Ryzen 9 9900X / 9950X (Zen 5 · AM5 旗舰)".into(),
+            subtitle: "B650 / X670 / X870 · 内置 12核(0C) AMD_Vanilla 内核补丁 + 双CCD防崩驱动 + pikera".into(),
+            platform: "AMD Zen 5 Desktop".into(),
+            recommended_smbios: "MacPro7,1".into(),
+        },
+        PresetMeta {
             id: "amd_ryzen_desktop".into(),
-            name: "AMD Ryzen 5000 / 7000 / 9000 台式机".into(),
-            subtitle: "B550 / B650 / X670 · 含 AMD Vanilla 核心补丁结构 + RX 6000 系 pikera 参数".into(),
+            name: "AMD Ryzen 5000 / 7000 (6核/8核通用台式机)".into(),
+            subtitle: "B550 / B650 · 内置 8核(08) AMD_Vanilla 核心补丁 + RX 6000 系 pikera 参数".into(),
             platform: "AMD Desktop".into(),
             recommended_smbios: "MacPro7,1".into(),
         },
@@ -75,9 +82,119 @@ fn make_driver_item(path: &str, comment: &str) -> PlistNode {
     ])
 }
 
+pub fn build_amd_vanilla_patches(core_count: u32) -> Vec<PlistNode> {
+    let clamped = core_count.clamp(4, 64) as u8;
+    let hex_core = format!("{:02X}", clamped);
+
+    let make_patch = |comment: &str, min_k: &str, max_k: &str, find: &str, mask: &str, replace: String| {
+        PlistNode::Dict(vec![
+            ("Arch".into(), PlistNode::String("x86_64".into())),
+            ("Base".into(), PlistNode::String(String::new())),
+            ("Comment".into(), PlistNode::String(comment.into())),
+            ("Count".into(), PlistNode::Integer(1)),
+            ("Enabled".into(), PlistNode::Boolean(true)),
+            ("Find".into(), PlistNode::Data(find.into())),
+            ("Identifier".into(), PlistNode::String("kernel".into())),
+            ("Limit".into(), PlistNode::Integer(0)),
+            ("Mask".into(), PlistNode::Data(mask.into())),
+            ("MaxKernel".into(), PlistNode::String(max_k.into())),
+            ("MinKernel".into(), PlistNode::String(min_k.into())),
+            ("Replace".into(), PlistNode::Data(replace)),
+            ("ReplaceMask".into(), PlistNode::Data(String::new())),
+            ("Skip".into(), PlistNode::Integer(0)),
+        ])
+    };
+
+    vec![
+        make_patch(
+            &format!("algrey | Force cpuid_cores_per_package ({} Cores) | 10.15-11.x", clamped),
+            "19.0.0",
+            "20.99.99",
+            "B80000000000",
+            "D20000000000",
+            format!("B8{}00000000", hex_core),
+        ),
+        make_patch(
+            &format!("algrey | Force cpuid_cores_per_package ({} Cores) | 12.0-13.2", clamped),
+            "21.0.0",
+            "22.3.99",
+            "BA0000000000",
+            "FA0000000000",
+            format!("BA{}00000000", hex_core),
+        ),
+        make_patch(
+            &format!("algrey | Force cpuid_cores_per_package ({} Cores · Zen4/Zen5) | 13.3-15.x+", clamped),
+            "22.4.0",
+            "",
+            "BA0000000090",
+            "FA00000000FF",
+            format!("BA{}00000090", hex_core),
+        ),
+        make_patch(
+            "algrey | _cpuid_set_info - GenuineIntel vendor spoof for AMD Ryzen",
+            "19.0.0",
+            "",
+            "756E654700000000",
+            "FFFFFFFF00000000",
+            "756E6547496E7465".into(),
+        ),
+        PlistNode::Dict(vec![
+            ("Arch".into(), PlistNode::String("x86_64".into())),
+            ("Base".into(), PlistNode::String(String::new())),
+            ("Comment".into(), PlistNode::String("shaneee / algrey | IOPCIFamily Zen 4 / Zen 5 AM5 PCIe Root Fix".into())),
+            ("Count".into(), PlistNode::Integer(0)),
+            ("Enabled".into(), PlistNode::Boolean(true)),
+            ("Find".into(), PlistNode::Data("4881FB00000040".into())),
+            ("Identifier".into(), PlistNode::String("com.apple.iokit.IOPCIFamily".into())),
+            ("Limit".into(), PlistNode::Integer(0)),
+            ("Mask".into(), PlistNode::Data(String::new())),
+            ("MaxKernel".into(), PlistNode::String(String::new())),
+            ("MinKernel".into(), PlistNode::String("22.0.0".into())),
+            ("Replace".into(), PlistNode::Data("4881FB00000080".into())),
+            ("ReplaceMask".into(), PlistNode::Data(String::new())),
+            ("Skip".into(), PlistNode::Integer(0)),
+        ]),
+    ]
+}
+
+/// Applies AMD Vanilla kernel patches & dual-CCD MCE disabler for a specific physical core count.
+pub fn apply_amd_core_patches_to_plist(plist: &mut PlistNode, core_count: u32) {
+    let patches = build_amd_vanilla_patches(core_count);
+    if let Some(kernel) = plist.get_mut("Kernel") {
+        kernel.set_key("Patch", PlistNode::Array(patches));
+        if let Some(quirks) = kernel.get_mut("Quirks") {
+            quirks.set_key("ProvideCurrentCpuInfo", PlistNode::Boolean(true));
+            quirks.set_key("AppleXcpmCfgLock", PlistNode::Boolean(false));
+            quirks.set_key("AppleCpuPmCfgLock", PlistNode::Boolean(false));
+        }
+        if core_count >= 12 {
+            let mut kexts = kernel
+                .get("Add")
+                .and_then(|a| a.as_array())
+                .map(|s| s.to_vec())
+                .unwrap_or_default();
+            let has_mce = kexts.iter().any(|k| {
+                k.get("BundlePath")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.contains("AppleMCEReporterDisabler"))
+                    .unwrap_or(false)
+            });
+            if !has_mce {
+                kexts.push(make_kext_item(
+                    "AppleMCEReporterDisabler.kext",
+                    "",
+                    "Dual-CCD Ryzen 9 (9900X/9950X/7900X) MCE Panic Disabler",
+                ));
+                kernel.set_key("Add", PlistNode::Array(kexts));
+            }
+        }
+    }
+}
+
 pub fn build_preset_plist(preset_id: &str) -> PlistNode {
     let is_alder_raptor = preset_id == "intel_12_14th_desktop";
-    let is_amd = preset_id == "amd_ryzen_desktop";
+    let is_amd_9900x = preset_id == "amd_ryzen_9900x_zen5";
+    let is_amd = preset_id == "amd_ryzen_desktop" || is_amd_9900x;
     let is_laptop = preset_id == "intel_laptop_cml";
 
     let smbios_model = if is_alder_raptor || is_amd {
@@ -195,6 +312,25 @@ pub fn build_preset_plist(preset_id: &str) -> PlistNode {
             "MacPro7,1 Memory Warning & CPU Name Fix",
         ));
     }
+    if is_amd {
+        kext_add.push(make_kext_item(
+            "AMDRyzenCPUPowerManagement.kext",
+            "Contents/MacOS/AMDRyzenCPUPowerManagement",
+            "AMD Ryzen Power & Temperature Sensor",
+        ));
+        kext_add.push(make_kext_item(
+            "LucyRTL8125Ethernet.kext",
+            "Contents/MacOS/LucyRTL8125Ethernet",
+            "AM5 / B550 / B650 / X870 2.5GbE Onboard LAN",
+        ));
+    }
+    if is_amd_9900x {
+        kext_add.push(make_kext_item(
+            "AppleMCEReporterDisabler.kext",
+            "",
+            "Ryzen 9 9900X / 9950X Dual-CCD MCE Kernel Panic Fix (Info.plist-only)",
+        ));
+    }
     if is_alder_raptor {
         kext_add.push(make_kext_item(
             "CpuTopologyRebuild.kext",
@@ -245,12 +381,20 @@ pub fn build_preset_plist(preset_id: &str) -> PlistNode {
         ])
     };
 
+    let kernel_patches = if is_amd_9900x {
+        build_amd_vanilla_patches(12)
+    } else if is_amd {
+        build_amd_vanilla_patches(8)
+    } else {
+        vec![]
+    };
+
     let kernel_node = PlistNode::Dict(vec![
         ("Add".into(), PlistNode::Array(kext_add)),
         ("Block".into(), PlistNode::Array(vec![])),
         ("Emulate".into(), emulate_node),
         ("Force".into(), PlistNode::Array(vec![])),
-        ("Patch".into(), PlistNode::Array(vec![])),
+        ("Patch".into(), PlistNode::Array(kernel_patches)),
         (
             "Quirks".into(),
             PlistNode::Dict(vec![

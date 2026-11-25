@@ -223,6 +223,25 @@ pub fn list_sample_hardware_profiles() -> Vec<HardwareProfile> {
             ],
         },
         HardwareProfile {
+            profile_name: "AMD Zen 5 旗舰工作站：Ryzen 9 9900X (12核) + X870 + RX 6900 XT".into(),
+            source: "9900X 专属测试画像".into(),
+            is_laptop: false,
+            board_model: "ASUS ROG STRIX X870-A GAMING WIFI".into(),
+            cpu_model: "AMD Ryzen 9 9900X 12-Core Processor (Zen 5)".into(),
+            cpu_vendor: "AMD".into(),
+            cpu_cores: 12,
+            gpus: vec![
+                "AMD Radeon RX 6900 XT (Navi 21 XTX)".into(),
+                "AMD Radeon Graphics (AM5 2CU iGPU - 需屏蔽)".into(),
+            ],
+            audio_codec: "Realtek ALC4080 (USB Audio)".into(),
+            network_cards: vec![
+                "Intel I226-V / Realtek 2.5GbE LAN".into(),
+                "MediaTek Wi-Fi 7 MT7925 (无驱动)".into(),
+            ],
+            storage_drives: vec!["Samsung SSD 990 PRO 2TB".into()],
+        },
+        HardwareProfile {
             profile_name: "AMD 锐龙高性价比主机：Ryzen 7 7700 + B650 + RX 6600".into(),
             source: "典型硬件测试画像".into(),
             is_laptop: false,
@@ -281,19 +300,36 @@ pub fn evaluate_hardware_compatibility(hw: &HardwareProfile) -> CompatibilityRep
             advice: "检测到当前为 Apple Silicon 真机环境！你可以正常使用本软件为其他 X86 台式机/笔记本编辑或生成黑苹果 EFI（也可切换上方模拟硬件画像测试）。".into(),
         });
     } else if is_amd {
-        preset_id = "amd_ryzen_desktop".into();
+        let is_zen5_or_12plus = cpu_lower.contains("9900")
+            || cpu_lower.contains("9950")
+            || hw.cpu_cores >= 12;
+        preset_id = if is_zen5_or_12plus {
+            "amd_ryzen_9900x_zen5".into()
+        } else {
+            "amd_ryzen_desktop".into()
+        };
         smbios = "MacPro7,1".into();
         kexts.push("RestrictEvents.kext".into());
         kexts.push("AMDRyzenCPUPowerManagement.kext".into());
+        if hw.cpu_cores >= 12 {
+            kexts.push("AppleMCEReporterDisabler.kext".into());
+        }
         boot_args.push("npci=0x2000".into());
+        let hex_core = format!("{:02X}", hw.cpu_cores.clamp(4, 64));
         items.push(ComponentAdvice {
             category: "处理器 (CPU)".into(),
             hardware_name: hw.cpu_model.clone(),
             status: "supported".into(),
-            badge_text: "需 AMD Vanilla 内核补丁".into(),
+            badge_text: format!("AMD Vanilla 补丁 ({}核 = 0x{})", hw.cpu_cores, hex_core),
             advice: format!(
-                "AMD 锐龙处理器可通过 AMD_Vanilla 内核补丁稳定运行 macOS Sonoma / Sequoia。注意需根据 {} 核心数设置 algrey - Force cpuid_cores_per_package 补丁（Adobe 部分软件需额外打补丁）。",
-                hw.cpu_cores
+                "已自动按 {} 物理核心换算写入 AMD_Vanilla 内核补丁（Sonoma/Sequoia 替换值 `BA{}00000090`）并开启 ProvideCurrentCpuInfo{}。",
+                hw.cpu_cores,
+                hex_core,
+                if hw.cpu_cores >= 12 {
+                    "；针对双 CCD 架构已自动加入 AppleMCEReporterDisabler.kext 防止 MCE 五国死机"
+                } else {
+                    ""
+                }
             ),
         });
     } else if is_intel_12_plus {
@@ -376,6 +412,14 @@ pub fn evaluate_hardware_compatibility(hw: &HardwareProfile) -> CompatibilityRep
                 status: "supported".into(),
                 badge_text: "原生免驱独显".into(),
                 advice: "AMD Navi 架构显卡在 macOS 下原生免驱支持 Metal 3 硬件加速！必须添加 `agdpmod=pikera` 启动参数防止开机进入桌面黑屏（已自动添加）。".into(),
+            });
+        } else if g.contains("am5") || g.contains("2cu") || g.contains("rx 7") || g.contains("rx 9") {
+            items.push(ComponentAdvice {
+                category: "显卡 (GPU)".into(),
+                hardware_name: gpu.clone(),
+                status: "unsupported".into(),
+                badge_text: "RDNA2核显/RDNA3+ 无驱动".into(),
+                advice: "Ryzen 7000/9000 内置的 2CU RDNA2 亮机核显及 RX 7000/9000 独显无 macOS 驱动！请在主板 BIOS 中将 Integrated Graphics 设为 Disabled，并将显示器插在免驱 RX 6000/5000/500 独显上。".into(),
             });
         } else if g.contains("uhd 7") || g.contains("iris xe") {
             items.push(ComponentAdvice {
@@ -537,6 +581,10 @@ pub fn generate_tailored_efi(
 ) -> Result<(PlistNode, Option<String>), String> {
     let report = evaluate_hardware_compatibility(hw);
     let mut plist = build_preset_plist(&report.recommended_preset_id);
+
+    if hw.cpu_vendor == "AMD" || hw.cpu_model.to_lowercase().contains("ryzen") {
+        crate::presets::apply_amd_core_patches_to_plist(&mut plist, hw.cpu_cores);
+    }
 
     // Override boot-args with exact hardware advisor recommendations
     if let Some(nvram_add) = plist.get_mut("NVRAM").and_then(|n| n.get_mut("Add")) {

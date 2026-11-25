@@ -21,7 +21,9 @@ use hw_advisor::{
     probe_current_machine, CompatibilityReport, HardwareProfile,
 };
 use plist_engine::{load_plist_file, save_plist_file, serialize_plist_xml_string, PlistNode};
-use presets::{build_preset_plist, list_presets, PresetMeta};
+use presets::{
+    apply_amd_core_patches_to_plist, build_preset_plist, list_presets, PresetMeta,
+};
 use serde::{Deserialize, Serialize};
 use smbios::{generate_smbios_for_model, list_smbios_models, GeneratedSmbios};
 use std::path::PathBuf;
@@ -210,6 +212,18 @@ fn cmd_apply_quick_fix(
 }
 
 #[tauri::command]
+fn cmd_apply_amd_vanilla_patches(
+    mut plist: PlistNode,
+    core_count: u32,
+    oc_dir: Option<String>,
+) -> (PlistNode, Vec<ValidationIssue>) {
+    apply_amd_core_patches_to_plist(&mut plist, core_count);
+    let dir = oc_dir.map(PathBuf::from);
+    let issues = validate_config(&plist, dir.as_deref());
+    (plist, issues)
+}
+
+#[tauri::command]
 fn cmd_migrate_clover_to_opencore(plist: PlistNode) -> Result<(LoadedWorkspacePayload, Vec<String>), String> {
     let MigrationSummary {
         opencore_plist,
@@ -333,6 +347,7 @@ pub fn run() {
             cmd_sync_oc_directory,
             cmd_validate_plist,
             cmd_apply_quick_fix,
+            cmd_apply_amd_vanilla_patches,
             cmd_migrate_clover_to_opencore,
             cmd_list_smbios_models,
             cmd_generate_smbios,
@@ -439,5 +454,31 @@ mod tests {
         assert!(!oc_args.contains("dart=0"));
         assert!(oc_args.contains("-wegnoegpu"));
         assert!(oc_args.contains("alcid=11"));
+    }
+
+    #[test]
+    fn test_amd_9900x_zen5_preset_and_12_core_patches() {
+        let plist = build_preset_plist("amd_ryzen_9900x_zen5");
+        let patches = plist
+            .get("Kernel")
+            .and_then(|k| k.get("Patch"))
+            .and_then(|p| p.as_array())
+            .expect("Kernel.Patch array");
+        assert!(patches.len() >= 4);
+        // Verify 12-core (0x0C) Sequoia/Sonoma patch BA0C00000090
+        let has_12core_hex = patches.iter().any(|item| {
+            item.get("Replace") == Some(&PlistNode::Data("BA0C00000090".into()))
+        });
+        assert!(has_12core_hex, "9900X preset must contain BA0C00000090 12-core patch");
+
+        let kexts = plist
+            .get("Kernel")
+            .and_then(|k| k.get("Add"))
+            .and_then(|a| a.as_array())
+            .expect("Kernel.Add array");
+        let has_mce_disabler = kexts.iter().any(|k| {
+            k.get("BundlePath").and_then(|b| b.as_str()) == Some("AppleMCEReporterDisabler.kext")
+        });
+        assert!(has_mce_disabler, "9900X preset must include AppleMCEReporterDisabler.kext");
     }
 }
