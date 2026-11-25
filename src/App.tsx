@@ -3,20 +3,38 @@ import {
   AlertCircle,
   AlertTriangle,
   CheckCircle2,
+  Code2,
   Cpu,
-  FileCode2,
+  Disc,
   FilePlus2,
   FolderOpen,
   FolderSync,
+  HardDrive,
+  Laptop,
   Layers,
+  Monitor,
+  Palette,
+  Radar,
   Redo2,
   Save,
   Search,
+  Settings,
+  Shield,
+  Sliders,
   Sparkles,
+  Terminal,
   Undo2,
   Wrench,
   X,
+  Zap,
+  type LucideIcon,
 } from "lucide-react";
+import {
+  SegmentedControl,
+  SquircleIcon,
+  applePrimaryBtnCls,
+  appleSecondaryBtnCls,
+} from "./components/AppleUI";
 import {
   CloverAcpiSection,
   CloverBootSection,
@@ -42,7 +60,7 @@ import {
   UefiSection,
 } from "./components/EditorSections";
 import { HardwareWizard } from "./components/HardwareWizard";
-import { RawPlistTreeView, XmlSourcePreview } from "./components/RawPlistTree";
+import { RawPlistTreeView } from "./components/RawPlistTree";
 import { ToolboxPanel } from "./components/ToolboxPanel";
 import {
   apiApplyQuickFix,
@@ -61,33 +79,41 @@ import {
   type CloverTab,
   type EditorTab,
 } from "./store/workspaceStore";
-import type { PresetMeta } from "./types/opencore";
+import { getStr, type PresetMeta } from "./types/opencore";
 
-const EDITOR_TABS: { id: EditorTab; label: string }[] = [
-  { id: "ACPI", label: "ACPI" },
-  { id: "Booter", label: "Booter" },
-  { id: "DeviceProperties", label: "DeviceProperties" },
-  { id: "Kernel", label: "Kernel" },
-  { id: "Misc", label: "Misc" },
-  { id: "NVRAM", label: "NVRAM" },
-  { id: "PlatformInfo", label: "PlatformInfo (三码)" },
-  { id: "UEFI", label: "UEFI" },
-  { id: "RawTree", label: "原始 Plist 树" },
-  { id: "XmlPreview", label: "XML 源码" },
+const OC_MENU: {
+  id: EditorTab;
+  label: string;
+  icon: LucideIcon;
+  color: "blue" | "indigo" | "teal" | "orange" | "slate" | "green" | "purple" | "amber" | "pink";
+}[] = [
+  { id: "PlatformInfo", label: "机型与三码信息", icon: Laptop, color: "blue" },
+  { id: "ACPI", label: "ACPI 电源与补丁", icon: Zap, color: "orange" },
+  { id: "Booter", label: "Booter 内存映射", icon: Layers, color: "indigo" },
+  { id: "DeviceProperties", label: "显卡与声卡注入", icon: Monitor, color: "teal" },
+  { id: "Kernel", label: "内核驱动与锐龙补丁", icon: Cpu, color: "red" as "pink" },
+  { id: "NVRAM", label: "启动参数与 SIP", icon: Terminal, color: "green" },
+  { id: "Misc", label: "启动菜单与安全", icon: Shield, color: "slate" },
+  { id: "UEFI", label: "UEFI 固件驱动", icon: Disc, color: "amber" },
+  { id: "RawTree", label: "Plist 键值树与源码", icon: Code2, color: "purple" },
 ];
 
-const CLOVER_TABS: { id: CloverTab; label: string }[] = [
-  { id: "ACPI", label: "ACPI (DSDT/SSDT)" },
-  { id: "Boot", label: "Boot (引导参数)" },
-  { id: "Devices", label: "Devices (声卡/USB)" },
-  { id: "GUI", label: "GUI (主题/分辨率)" },
-  { id: "Graphics", label: "Graphics (显卡注入)" },
-  { id: "KernelAndKextPatches", label: "KernelPatches" },
-  { id: "Quirks", label: "Quirks (r5123+)" },
-  { id: "RtVariables", label: "RtVariables & 驱动注入" },
-  { id: "SMBIOS", label: "SMBIOS (四叶草三码)" },
-  { id: "RawTree", label: "原始 Plist 树" },
-  { id: "XmlPreview", label: "XML 源码" },
+const CLOVER_MENU: {
+  id: CloverTab;
+  label: string;
+  icon: LucideIcon;
+  color: "blue" | "indigo" | "teal" | "orange" | "slate" | "green" | "purple" | "amber" | "pink";
+}[] = [
+  { id: "SMBIOS", label: "四叶草机型与三码", icon: Laptop, color: "green" },
+  { id: "ACPI", label: "ACPI (DSDT/SSDT)", icon: Zap, color: "orange" },
+  { id: "Boot", label: "Boot 启动参数", icon: Terminal, color: "blue" },
+  { id: "Devices", label: "声卡与 USB 修复", icon: HardDrive, color: "teal" },
+  { id: "GUI", label: "主题与屏幕分辨率", icon: Palette, color: "purple" },
+  { id: "Graphics", label: "传统老显卡注入", icon: Monitor, color: "indigo" },
+  { id: "KernelAndKextPatches", label: "内核与 CFG 解锁", icon: Cpu, color: "pink" },
+  { id: "Quirks", label: "Quirks (r5123+)", icon: Sliders, color: "amber" },
+  { id: "RtVariables", label: "SIP 与驱动开关", icon: Settings, color: "slate" },
+  { id: "RawTree", label: "Plist 键值树与源码", icon: Code2, color: "indigo" },
 ];
 
 export const App: React.FC = () => {
@@ -104,7 +130,6 @@ export const App: React.FC = () => {
     future,
     isDirty,
     issues,
-    backups,
     showIssuesDrawer,
     toasts,
     setActiveModule,
@@ -123,83 +148,40 @@ export const App: React.FC = () => {
   } = useWorkspaceStore();
 
   const [presets, setPresets] = useState<PresetMeta[]>([]);
-  const [showPresetMenu, setShowPresetMenu] = useState(false);
+  const [showPresetPopover, setShowPresetPopover] = useState(false);
 
   useEffect(() => {
     apiListPresets().then(setPresets).catch(() => {});
     if (isTauriRuntime()) {
-      apiLoadPreset("intel_10th_desktop")
+      apiLoadPreset("amd_ryzen_9900x_zen5")
         .then((payload) => loadWorkspace(payload))
         .catch(() => {});
     }
   }, [loadWorkspace]);
 
+  const isClover = bootloader === "Clover";
   const errorCount = issues.filter((i) => i.severity === "error").length;
   const warnCount = issues.filter((i) => i.severity === "warning").length;
 
-  const handleSwitchBootloaderPreset = async (target: "OpenCore" | "Clover") => {
+  const currentModelName = isClover
+    ? getStr(plist, ["SMBIOS", "ProductName"], "iMac20,1")
+    : getStr(plist, ["PlatformInfo", "Generic", "SystemProductName"], "MacPro7,1");
+
+  const activeTitle =
+    activeModule === "hardware"
+      ? "硬件检测与智能生成 EFI"
+      : activeModule === "toolbox"
+      ? "排错诊断与声卡工具箱"
+      : isClover
+      ? CLOVER_MENU.find((m) => m.id === activeCloverTab)?.label ?? "四叶草设置"
+      : OC_MENU.find((m) => m.id === activeEditorTab)?.label ?? "OpenCore 设置";
+
+  const handleSwitchBootloader = async (next: string) => {
     if (!isTauriRuntime()) return;
-    const presetId = target === "Clover" ? "clover_intel_modern" : "intel_10th_desktop";
+    const presetId = next === "Clover" ? "clover_intel_modern" : "amd_ryzen_9900x_zen5";
     const payload = await apiLoadPreset(presetId);
     loadWorkspace(payload);
     setActiveModule("editor");
-    pushToast(
-      "info",
-      target === "Clover"
-        ? "已切换至四叶草 Clover 配置模式"
-        : "已切换至 OpenCore 配置模式"
-    );
-  };
-
-  const handleOpenEfiFolder = async () => {
-    try {
-      const folder = await apiPickEfiFolder();
-      if (!folder) return;
-      const payload = await apiOpenEfiOrPlist(folder);
-      loadWorkspace(payload);
-      setActiveModule("editor");
-      pushToast(
-        "success",
-        `已自动识别为 ${payload.bootloader ?? "OpenCore"} 并加载目录: ${folder}`
-      );
-    } catch (e) {
-      pushToast("error", String(e));
-    }
-  };
-
-  const handleOpenPlistFile = async () => {
-    try {
-      const file = await apiPickPlistFile();
-      if (!file) return;
-      const payload = await apiOpenEfiOrPlist(file);
-      loadWorkspace(payload);
-      setActiveModule("editor");
-      pushToast(
-        "success",
-        `已自动识别为 ${payload.bootloader ?? "OpenCore"} 配置: ${file}`
-      );
-    } catch (e) {
-      pushToast("error", String(e));
-    }
-  };
-
-  const handleSyncOcFolder = async () => {
-    try {
-      let targetDir = ocDir;
-      if (!targetDir) {
-        targetDir = await apiPickEfiFolder();
-        if (!targetDir) return;
-      }
-      const [syncedPlist, scanRes, nextIssues] = await apiSyncOcDirectory(targetDir, plist);
-      replacePlist(syncedPlist);
-      setScanAndIssues(scanRes, nextIssues);
-      pushToast(
-        "success",
-        `已扫描同步 ${scanRes.acpi_files.length} 个 ACPI、${scanRes.kexts.length} 个驱动`
-      );
-    } catch (e) {
-      pushToast("error", String(e));
-    }
   };
 
   const handleSave = async (saveAs = false) => {
@@ -211,238 +193,263 @@ export const App: React.FC = () => {
       }
       const snaps = await apiSavePlist(targetPath, plist, true);
       markSaved(targetPath, snaps);
-      pushToast("success", `已无损保存至 ${targetPath}（已自动生成历史快照备份）`);
+      pushToast("success", `已保存配置并自动创建快照备份`);
     } catch (e) {
       pushToast("error", String(e));
     }
   };
 
-  const isClover = bootloader === "Clover";
-
   return (
-    <div className="h-screen w-screen flex bg-zinc-950 text-zinc-100 overflow-hidden">
-      {/* Left macOS Translucent Sidebar */}
-      <aside className="w-64 shrink-0 bg-zinc-900/80 border-r border-zinc-800/80 flex flex-col justify-between p-3.5 overflow-y-auto">
-        <div className="space-y-5">
-          {/* App Brand Header */}
-          <div className="flex items-center gap-3 px-2 pt-1">
+    <div className="h-screen w-screen flex bg-[#F5F5F7] text-[#1D1D1F] overflow-hidden">
+      {/* Left macOS Sequoia "System Settings" Frosted Sidebar */}
+      <aside className="w-[262px] shrink-0 bg-[#EFEFF4]/90 backdrop-blur-2xl border-r border-black/[0.08] flex flex-col p-3 overflow-y-auto">
+        {/* Search Input (macOS Settings style) */}
+        <button
+          type="button"
+          onClick={() => setShowCommandPalette(true)}
+          className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-[8px] bg-black/[0.055] hover:bg-black/[0.08] text-[12.5px] text-[#6E6E73] transition mb-3"
+        >
+          <Search className="w-3.5 h-3.5 text-[#86868B]" />
+          <span>搜索设置项</span>
+          <span className="ml-auto text-[11px] text-[#86868B]">⌘K</span>
+        </button>
+
+        {/* Top Apple-ID-Style Machine Profile Card */}
+        <div className="bg-white/80 rounded-[12px] border border-black/[0.06] p-3 mb-3 space-y-2.5 shadow-[0_1px_2px_rgba(0,0,0,0.03)]">
+          <div className="flex items-center gap-2.5">
             <div
-              className={`w-9 h-9 rounded-xl flex items-center justify-center shadow-lg ${
+              className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-[13px] shadow-sm shrink-0 ${
                 isClover
-                  ? "bg-gradient-to-br from-emerald-500 to-teal-600 shadow-emerald-600/25"
-                  : "bg-gradient-to-br from-blue-500 to-indigo-600 shadow-blue-600/25"
+                  ? "bg-gradient-to-b from-[#34C759] to-[#248A3D]"
+                  : "bg-gradient-to-b from-[#0A84FF] to-[#005BB5]"
               }`}
             >
-              <Layers className="w-5 h-5 text-white" />
+              {isClover ? "🍀" : "OC"}
             </div>
-            <div>
-              <div className="text-sm font-bold tracking-tight text-white">OpenCore Studio</div>
-              <div className="text-[11px] text-zinc-400">OC + 四叶草双引擎工作台</div>
+            <div className="min-w-0">
+              <div className="text-[13px] font-bold text-[#1D1D1F] truncate">
+                {currentModelName}
+              </div>
+              <div className="text-[11px] text-[#86868B] truncate" title={workspaceTitle}>
+                {isDirty ? "● 有未保存更改" : workspaceTitle}
+              </div>
             </div>
           </div>
 
-          {/* Dual Bootloader Mode Switcher */}
-          <div className="bg-zinc-950/90 border border-zinc-800 p-1 rounded-xl grid grid-cols-2 gap-1 text-xs">
-            <button
-              type="button"
-              onClick={() => handleSwitchBootloaderPreset("OpenCore")}
-              className={`py-1.5 rounded-lg font-semibold transition ${
-                !isClover
-                  ? "bg-blue-600 text-white shadow"
-                  : "text-zinc-400 hover:text-zinc-200"
-              }`}
-            >
-              OpenCore
-            </button>
-            <button
-              type="button"
-              onClick={() => handleSwitchBootloaderPreset("Clover")}
-              className={`py-1.5 rounded-lg font-semibold transition ${
-                isClover
-                  ? "bg-emerald-600 text-white shadow"
-                  : "text-zinc-400 hover:text-zinc-200"
-              }`}
-            >
-              🍀 四叶草 Clover
-            </button>
-          </div>
-
-          {/* Primary 3 Pillars Navigation */}
-          <nav className="space-y-1">
-            <div className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
-              核心工作流
-            </div>
-            <button
-              type="button"
-              onClick={() => setActiveModule("editor")}
-              className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-medium transition ${
-                activeModule === "editor"
-                  ? isClover
-                    ? "bg-emerald-600 text-white shadow-md shadow-emerald-600/20"
-                    : "bg-blue-600 text-white shadow-md shadow-blue-600/20"
-                  : "text-zinc-300 hover:bg-zinc-800/70"
-              }`}
-            >
-              <FileCode2 className="w-4 h-4" />
-              <span>可视化编辑与管理 EFI</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setActiveModule("hardware")}
-              className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-medium transition ${
-                activeModule === "hardware"
-                  ? "bg-blue-600 text-white shadow-md shadow-blue-600/20"
-                  : "text-zinc-300 hover:bg-zinc-800/70"
-              }`}
-            >
-              <Cpu className="w-4 h-4" />
-              <span>硬件检测与智能生成 EFI</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setActiveModule("toolbox")}
-              className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-medium transition ${
-                activeModule === "toolbox"
-                  ? "bg-blue-600 text-white shadow-md shadow-blue-600/20"
-                  : "text-zinc-300 hover:bg-zinc-800/70"
-              }`}
-            >
-              <Wrench className="w-4 h-4" />
-              <span>排错诊断与辅助工具箱</span>
-            </button>
-          </nav>
-
-          {/* Quick Open / Presets Panel */}
-          <div className="space-y-2 pt-2 border-t border-zinc-800/80">
-            <div className="px-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
-              文件与标准模板 (自动识别 OC / 四叶草)
-            </div>
-            <button
-              type="button"
-              onClick={handleOpenEfiFolder}
-              className="w-full flex items-center gap-2 px-3 py-2 rounded-lg bg-zinc-800/70 hover:bg-zinc-800 text-xs text-zinc-200 transition"
-            >
-              <FolderOpen className="w-4 h-4 text-blue-400" />
-              打开 EFI 文件夹 (OC/Clover)...
-            </button>
-            <button
-              type="button"
-              onClick={handleOpenPlistFile}
-              className="w-full flex items-center gap-2 px-3 py-2 rounded-lg bg-zinc-800/70 hover:bg-zinc-800 text-xs text-zinc-200 transition"
-            >
-              <FileCode2 className="w-4 h-4 text-emerald-400" />
-              打开单个 config.plist...
-            </button>
-
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => setShowPresetMenu(!showPresetMenu)}
-                className="w-full flex items-center justify-between px-3 py-2 rounded-lg bg-zinc-800/40 hover:bg-zinc-800 border border-zinc-800 text-xs text-zinc-300 transition"
-              >
-                <span className="flex items-center gap-2">
-                  <FilePlus2 className="w-4 h-4 text-purple-400" />
-                  新建 OpenCore / 四叶草预设
-                </span>
-              </button>
-              {showPresetMenu && (
-                <div className="mt-1.5 bg-zinc-950 border border-zinc-700 rounded-xl p-1.5 space-y-1 shadow-xl max-h-64 overflow-y-auto">
-                  {presets.map((p) => (
-                    <button
-                      key={p.id}
-                      type="button"
-                      onClick={async () => {
-                        const payload = await apiLoadPreset(p.id);
-                        loadWorkspace(payload);
-                        setActiveModule("editor");
-                        setShowPresetMenu(false);
-                        pushToast("info", `已载入预设模板: ${p.name}`);
-                      }}
-                      className="w-full text-left px-2.5 py-2 rounded-lg hover:bg-zinc-800 transition"
-                    >
-                      <div className="text-xs font-medium text-zinc-100">{p.name}</div>
-                      <div className="text-[10px] text-zinc-400 line-clamp-1">{p.subtitle}</div>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+          <div className="w-full flex justify-center">
+            <SegmentedControl
+              value={bootloader}
+              onChange={handleSwitchBootloader}
+              options={[
+                { id: "OpenCore", label: "OpenCore" },
+                { id: "Clover", label: "🍀 四叶草" },
+              ]}
+            />
           </div>
         </div>
 
-        {/* Bottom Workspace & Snapshot Status */}
-        <div className="mt-4 bg-zinc-950/70 border border-zinc-800/80 rounded-xl p-3 space-y-1.5 text-[11px]">
-          <div className="flex items-center justify-between text-zinc-400">
-            <span
-              className={`px-1.5 py-0.5 rounded font-semibold ${
-                isClover
-                  ? "bg-emerald-500/15 text-emerald-300"
-                  : "bg-blue-500/15 text-blue-300"
-              }`}
-            >
-              {isClover ? "🍀 Clover" : "OpenCore"}
-            </span>
-            {isDirty && <span className="text-amber-400 font-medium">● 未保存修改</span>}
-          </div>
-          <div className="text-zinc-200 font-medium truncate" title={workspaceTitle}>
-            {workspaceTitle}
-          </div>
-          {backups.length > 0 && (
-            <div className="text-emerald-400/90">已保存 {backups.length} 份本地安全快照</div>
-          )}
+        {/* Group 1: Smart Assistants */}
+        <div className="space-y-0.5 mb-3">
+          <button
+            type="button"
+            onClick={() => setActiveModule("hardware")}
+            className={`w-full flex items-center gap-2.5 px-2.5 py-[6px] rounded-[8px] text-[13px] font-medium transition ${
+              activeModule === "hardware"
+                ? "bg-[#007AFF] text-white shadow-xs"
+                : "text-[#1D1D1F] hover:bg-black/[0.045]"
+            }`}
+          >
+            <SquircleIcon icon={Radar} color="orange" />
+            <span>硬件检测与一键生成</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveModule("toolbox")}
+            className={`w-full flex items-center gap-2.5 px-2.5 py-[6px] rounded-[8px] text-[13px] font-medium transition ${
+              activeModule === "toolbox"
+                ? "bg-[#007AFF] text-white shadow-xs"
+                : "text-[#1D1D1F] hover:bg-black/[0.045]"
+            }`}
+          >
+            <SquircleIcon icon={Wrench} color="purple" />
+            <span>排错与声卡工具箱</span>
+          </button>
+        </div>
+
+        <div className="px-2.5 pb-1 text-[11px] font-semibold text-[#86868B]">
+          {isClover ? "四叶草配置项" : "OpenCore 配置项"}
+        </div>
+
+        {/* Group 2: Bootloader Settings Rows */}
+        <div className="space-y-0.5 flex-1">
+          {!isClover
+            ? OC_MENU.map((item) => {
+                const selected = activeModule === "editor" && activeEditorTab === item.id;
+                const secErrors = issues.filter(
+                  (i) => i.section === item.id && i.severity === "error"
+                ).length;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => {
+                      setActiveModule("editor");
+                      setActiveEditorTab(item.id);
+                    }}
+                    className={`w-full flex items-center gap-2.5 px-2.5 py-[6px] rounded-[8px] text-[13px] font-medium transition ${
+                      selected
+                        ? "bg-[#007AFF] text-white shadow-xs"
+                        : "text-[#1D1D1F] hover:bg-black/[0.045]"
+                    }`}
+                  >
+                    <SquircleIcon icon={item.icon} color={item.color} />
+                    <span className="truncate">{item.label}</span>
+                    {secErrors > 0 && (
+                      <span
+                        className={`ml-auto px-1.5 py-0.2 rounded-full text-[10.5px] font-semibold ${
+                          selected ? "bg-white/25 text-white" : "bg-[#FF3B30] text-white"
+                        }`}
+                      >
+                        {secErrors}
+                      </span>
+                    )}
+                  </button>
+                );
+              })
+            : CLOVER_MENU.map((item) => {
+                const selected = activeModule === "editor" && activeCloverTab === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => {
+                      setActiveModule("editor");
+                      setActiveCloverTab(item.id);
+                    }}
+                    className={`w-full flex items-center gap-2.5 px-2.5 py-[6px] rounded-[8px] text-[13px] font-medium transition ${
+                      selected
+                        ? "bg-[#34C759] text-white shadow-xs"
+                        : "text-[#1D1D1F] hover:bg-black/[0.045]"
+                    }`}
+                  >
+                    <SquircleIcon icon={item.icon} color={item.color} />
+                    <span className="truncate">{item.label}</span>
+                  </button>
+                );
+              })}
+        </div>
+
+        {/* Bottom File Operations */}
+        <div className="pt-3 mt-2 border-t border-black/[0.07] grid grid-cols-2 gap-1.5">
+          <button
+            type="button"
+            onClick={async () => {
+              const folder = await apiPickEfiFolder();
+              if (!folder) return;
+              const payload = await apiOpenEfiOrPlist(folder);
+              loadWorkspace(payload);
+              setActiveModule("editor");
+              pushToast("success", "已打开 EFI 目录");
+            }}
+            className="flex items-center justify-center gap-1.5 py-1.5 rounded-[8px] bg-white hover:bg-black/[0.03] border border-black/[0.08] text-[12px] font-medium text-[#1D1D1F] shadow-2xs"
+          >
+            <FolderOpen className="w-3.5 h-3.5 text-[#007AFF]" />
+            打开 EFI
+          </button>
+          <button
+            type="button"
+            onClick={async () => {
+              const file = await apiPickPlistFile();
+              if (!file) return;
+              const payload = await apiOpenEfiOrPlist(file);
+              loadWorkspace(payload);
+              setActiveModule("editor");
+              pushToast("success", "已打开 Plist 文件");
+            }}
+            className="flex items-center justify-center gap-1.5 py-1.5 rounded-[8px] bg-white hover:bg-black/[0.03] border border-black/[0.08] text-[12px] font-medium text-[#1D1D1F] shadow-2xs"
+          >
+            <FilePlus2 className="w-3.5 h-3.5 text-[#5E5CE6]" />
+            打开文件
+          </button>
         </div>
       </aside>
 
-      {/* Main Content Area */}
-      <div className="flex-1 flex flex-col min-w-0">
-        {/* Top Action Bar */}
-        <header className="h-14 shrink-0 border-b border-zinc-800/80 bg-zinc-900/40 px-5 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setShowCommandPalette(true)}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-zinc-900 border border-zinc-800 hover:border-zinc-700 text-xs text-zinc-400 w-64"
-            >
-              <Search className="w-3.5 h-3.5" />
-              <span>全局搜索配置项 / 工具...</span>
-              <kbd className="ml-auto text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400">
-                ⌘K
-              </kbd>
-            </button>
-
-            <button
-              type="button"
-              disabled={past.length === 0}
-              onClick={undo}
-              title="撤销修改"
-              className="p-2 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-300 disabled:opacity-35 hover:bg-zinc-800"
-            >
-              <Undo2 className="w-3.5 h-3.5" />
-            </button>
-            <button
-              type="button"
-              disabled={future.length === 0}
-              onClick={redo}
-              title="重做修改"
-              className="p-2 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-300 disabled:opacity-35 hover:bg-zinc-800"
-            >
-              <Redo2 className="w-3.5 h-3.5" />
-            </button>
+      {/* Right macOS System Settings Content Area */}
+      <div className="flex-1 flex flex-col min-w-0 bg-[#F5F5F7]">
+        {/* Crisp Translucent Top Titlebar */}
+        <header className="h-[52px] shrink-0 bg-[#F5F5F7]/85 backdrop-blur-xl border-b border-black/[0.07] px-6 flex items-center justify-between gap-4 z-10">
+          <div className="flex items-center gap-3">
+            <h1 className="text-[15px] font-bold text-[#1D1D1F] tracking-tight">
+              {activeTitle}
+            </h1>
+            <div className="flex items-center gap-1 ml-2">
+              <button
+                type="button"
+                disabled={past.length === 0}
+                onClick={undo}
+                title="撤销"
+                className="p-1.5 rounded-[6px] hover:bg-black/[0.05] text-[#6E6E73] disabled:opacity-30"
+              >
+                <Undo2 className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                disabled={future.length === 0}
+                onClick={redo}
+                title="重做"
+                className="p-1.5 rounded-[6px] hover:bg-black/[0.05] text-[#6E6E73] disabled:opacity-30"
+              >
+                <Redo2 className="w-3.5 h-3.5" />
+              </button>
+            </div>
           </div>
 
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2 relative">
+            {/* Presets Popover Button */}
+            <button
+              type="button"
+              onClick={() => setShowPresetPopover(!showPresetPopover)}
+              className={appleSecondaryBtnCls}
+            >
+              切换机型预设
+            </button>
+            {showPresetPopover && (
+              <div className="absolute right-44 top-10 w-80 bg-white/95 backdrop-blur-xl border border-black/[0.1] rounded-[12px] shadow-[0_12px_32px_rgba(0,0,0,0.14)] p-1.5 z-30 max-h-80 overflow-y-auto">
+                {presets.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={async () => {
+                      const payload = await apiLoadPreset(p.id);
+                      loadWorkspace(payload);
+                      setActiveModule("editor");
+                      setShowPresetPopover(false);
+                      pushToast("info", `已套用预设：${p.name}`);
+                    }}
+                    className="w-full text-left px-3 py-2 rounded-[8px] hover:bg-[#007AFF] group transition"
+                  >
+                    <div className="text-[12.5px] font-semibold text-[#1D1D1F] group-hover:text-white">
+                      {p.name}
+                    </div>
+                    <div className="text-[11px] text-[#86868B] group-hover:text-white/85 line-clamp-1">
+                      {p.subtitle}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+
             {/* Validation Status Pill */}
             <button
               type="button"
               onClick={() => setShowIssuesDrawer(!showIssuesDrawer)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition ${
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-semibold transition ${
                 errorCount > 0
-                  ? "bg-rose-950/40 border-rose-500/40 text-rose-300"
+                  ? "bg-[#FF3B30]/12 text-[#D70015]"
                   : warnCount > 0
-                  ? "bg-amber-950/40 border-amber-500/40 text-amber-300"
-                  : "bg-emerald-950/40 border-emerald-500/40 text-emerald-300"
+                  ? "bg-[#FF9500]/15 text-[#C93400]"
+                  : "bg-[#34C759]/12 text-[#248A3D]"
               }`}
             >
               {errorCount > 0 ? (
@@ -453,175 +460,124 @@ export const App: React.FC = () => {
                 <CheckCircle2 className="w-3.5 h-3.5" />
               )}
               <span>
-                {isClover ? "四叶草校验" : "OC 校验"}:{" "}
                 {errorCount === 0 && warnCount === 0
-                  ? "全部通过"
+                  ? "配置无误"
                   : `${errorCount} 错误 · ${warnCount} 提醒`}
               </span>
             </button>
 
             <button
               type="button"
-              onClick={handleSyncOcFolder}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-xs text-zinc-200 transition"
+              onClick={async () => {
+                try {
+                  let targetDir = ocDir;
+                  if (!targetDir) {
+                    targetDir = await apiPickEfiFolder();
+                    if (!targetDir) return;
+                  }
+                  const [syncedPlist, scanRes, nextIssues] = await apiSyncOcDirectory(
+                    targetDir,
+                    plist
+                  );
+                  replacePlist(syncedPlist);
+                  setScanAndIssues(scanRes, nextIssues);
+                  pushToast("success", `已同步 ${scanRes.kexts.length} 项驱动`);
+                } catch (e) {
+                  pushToast("error", String(e));
+                }
+              }}
+              className={appleSecondaryBtnCls}
             >
-              <FolderSync className="w-3.5 h-3.5 text-blue-400" />
-              扫描同步 {isClover ? "CLOVER" : "OC"} 目录
+              <FolderSync className="w-3.5 h-3.5 text-[#007AFF]" />
+              同步目录
             </button>
 
             <button
               type="button"
               onClick={() => handleSave(false)}
-              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold text-white transition ${
-                isClover
-                  ? "bg-emerald-600 hover:bg-emerald-500"
-                  : "bg-blue-600 hover:bg-blue-500"
-              }`}
+              className={applePrimaryBtnCls}
             >
               <Save className="w-3.5 h-3.5" />
-              保存配置
-            </button>
-
-            <button
-              type="button"
-              onClick={() => handleSave(true)}
-              className="px-2.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-xs text-zinc-300 transition"
-            >
-              另存为
+              保存
             </button>
           </div>
         </header>
 
-        {/* Subbar Tabs in Editor Module */}
-        {activeModule === "editor" && !isClover && (
-          <div className="px-5 pt-3 pb-2 border-b border-zinc-900 bg-zinc-950/80 flex items-center gap-1.5 overflow-x-auto shrink-0">
-            {EDITOR_TABS.map((tab) => {
-              const tabIssues = issues.filter(
-                (i) => i.section === tab.id && i.severity === "error"
-              ).length;
-              const active = activeEditorTab === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  type="button"
-                  onClick={() => setActiveEditorTab(tab.id)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap flex items-center gap-1.5 transition ${
-                    active
-                      ? "bg-zinc-800 text-white border border-zinc-700"
-                      : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900"
-                  }`}
-                >
-                  <span>{tab.label}</span>
-                  {tabIssues > 0 && (
-                    <span className="px-1.5 py-0.2 rounded-full bg-rose-500/25 text-rose-300 text-[10px]">
-                      {tabIssues}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
+        {/* Centered Clean macOS Settings Scrollable Column */}
+        <main className="flex-1 overflow-y-auto px-8 py-6">
+          <div className="max-w-3xl mx-auto pb-10">
+            {activeModule === "editor" && !isClover && (
+              <>
+                <MigrationNotesAlert />
+                {activeEditorTab === "ACPI" && <AcpiSection />}
+                {activeEditorTab === "Booter" && <BooterSection />}
+                {activeEditorTab === "DeviceProperties" && <DevicePropertiesSection />}
+                {activeEditorTab === "Kernel" && <KernelSection />}
+                {activeEditorTab === "Misc" && <MiscSection />}
+                {activeEditorTab === "NVRAM" && <NvramSection />}
+                {activeEditorTab === "PlatformInfo" && <PlatformInfoSection />}
+                {activeEditorTab === "UEFI" && <UefiSection />}
+                {activeEditorTab === "RawTree" && <RawPlistTreeView />}
+              </>
+            )}
+
+            {activeModule === "editor" && isClover && (
+              <>
+                <CloverMigrationBanner />
+                {activeCloverTab === "ACPI" && <CloverAcpiSection />}
+                {activeCloverTab === "Boot" && <CloverBootSection />}
+                {activeCloverTab === "Devices" && <CloverDevicesSection />}
+                {activeCloverTab === "GUI" && <CloverGuiSection />}
+                {activeCloverTab === "Graphics" && <CloverGraphicsSection />}
+                {activeCloverTab === "KernelAndKextPatches" && <CloverKernelPatchesSection />}
+                {activeCloverTab === "Quirks" && <CloverQuirksSection />}
+                {activeCloverTab === "RtVariables" && <CloverRtAndSysSection />}
+                {activeCloverTab === "SMBIOS" && <CloverSmbiosSection />}
+                {activeCloverTab === "RawTree" && <RawPlistTreeView />}
+              </>
+            )}
+
+            {activeModule === "hardware" && <HardwareWizard />}
+            {activeModule === "toolbox" && <ToolboxPanel />}
           </div>
-        )}
-
-        {activeModule === "editor" && isClover && (
-          <div className="px-5 pt-3 pb-2 border-b border-zinc-900 bg-zinc-950/80 flex items-center gap-1.5 overflow-x-auto shrink-0">
-            {CLOVER_TABS.map((tab) => {
-              const active = activeCloverTab === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  type="button"
-                  onClick={() => setActiveCloverTab(tab.id)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition ${
-                    active
-                      ? "bg-emerald-950/60 text-emerald-200 border border-emerald-500/40"
-                      : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900"
-                  }`}
-                >
-                  {tab.label}
-                </button>
-              );
-            })}
-          </div>
-        )}
-
-        {/* Scrollable Workspace Body */}
-        <main className="flex-1 overflow-y-auto p-6">
-          {activeModule === "editor" && !isClover && (
-            <>
-              <MigrationNotesAlert />
-              {activeEditorTab === "ACPI" && <AcpiSection />}
-              {activeEditorTab === "Booter" && <BooterSection />}
-              {activeEditorTab === "DeviceProperties" && <DevicePropertiesSection />}
-              {activeEditorTab === "Kernel" && <KernelSection />}
-              {activeEditorTab === "Misc" && <MiscSection />}
-              {activeEditorTab === "NVRAM" && <NvramSection />}
-              {activeEditorTab === "PlatformInfo" && <PlatformInfoSection />}
-              {activeEditorTab === "UEFI" && <UefiSection />}
-              {activeEditorTab === "RawTree" && <RawPlistTreeView />}
-              {activeEditorTab === "XmlPreview" && <XmlSourcePreview />}
-            </>
-          )}
-
-          {activeModule === "editor" && isClover && (
-            <>
-              <CloverMigrationBanner />
-              {activeCloverTab === "ACPI" && <CloverAcpiSection />}
-              {activeCloverTab === "Boot" && <CloverBootSection />}
-              {activeCloverTab === "Devices" && <CloverDevicesSection />}
-              {activeCloverTab === "GUI" && <CloverGuiSection />}
-              {activeCloverTab === "Graphics" && <CloverGraphicsSection />}
-              {activeCloverTab === "KernelAndKextPatches" && <CloverKernelPatchesSection />}
-              {activeCloverTab === "Quirks" && <CloverQuirksSection />}
-              {activeCloverTab === "RtVariables" && <CloverRtAndSysSection />}
-              {activeCloverTab === "SMBIOS" && <CloverSmbiosSection />}
-              {activeCloverTab === "RawTree" && <RawPlistTreeView />}
-              {activeCloverTab === "XmlPreview" && <XmlSourcePreview />}
-            </>
-          )}
-
-          {activeModule === "hardware" && <HardwareWizard />}
-          {activeModule === "toolbox" && <ToolboxPanel />}
         </main>
       </div>
 
-      {/* Right Slide-Over Validator Drawer */}
+      {/* Right Clean Validation Sheet */}
       {showIssuesDrawer && (
-        <div className="w-96 shrink-0 border-l border-zinc-800 bg-zinc-900/95 p-4 flex flex-col">
-          <div className="flex items-center justify-between pb-3 border-b border-zinc-800">
-            <h3 className="text-sm font-semibold text-zinc-100">
-              {isClover ? "四叶草 Clover" : "OpenCore"} 配置校验报告 ({issues.length})
+        <div className="w-88 shrink-0 border-l border-black/[0.08] bg-white/95 backdrop-blur-xl p-4 flex flex-col shadow-xl">
+          <div className="flex items-center justify-between pb-3 border-b border-black/[0.07]">
+            <h3 className="text-[13.5px] font-bold text-[#1D1D1F]">
+              配置合法性检查 ({issues.length})
             </h3>
             <button
               type="button"
               onClick={() => setShowIssuesDrawer(false)}
-              className="p-1 text-zinc-400 hover:text-zinc-100"
+              className="p-1 text-[#86868B] hover:text-[#1D1D1F]"
             >
               <X className="w-4 h-4" />
             </button>
           </div>
 
-          <div className="flex-1 overflow-y-auto py-3 space-y-3">
+          <div className="flex-1 overflow-y-auto py-3 space-y-2.5">
             {issues.length === 0 ? (
-              <div className="py-12 text-center space-y-2">
-                <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto" />
-                <div className="text-xs font-medium text-zinc-200">所有核心规则校验全部通过！</div>
+              <div className="py-14 text-center space-y-2">
+                <CheckCircle2 className="w-8 h-8 text-[#34C759] mx-auto" />
+                <div className="text-[13px] font-semibold text-[#1D1D1F]">所有配置项检查无误</div>
               </div>
             ) : (
               issues.map((iss) => (
                 <div
                   key={iss.id}
-                  className={`rounded-xl border p-3 space-y-2 text-xs ${
-                    iss.severity === "error"
-                      ? "bg-rose-950/25 border-rose-500/35"
-                      : iss.severity === "warning"
-                      ? "bg-amber-950/25 border-amber-500/35"
-                      : "bg-zinc-800/40 border-zinc-700"
-                  }`}
+                  className="rounded-[12px] border border-black/[0.08] bg-[#F5F5F7]/70 p-3 space-y-2 text-[12px]"
                 >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-zinc-950 text-zinc-300">
-                      {iss.field_path}
+                  <div className="flex items-center justify-between">
+                    <span
+                      className={`font-semibold ${
+                        iss.severity === "error" ? "text-[#D70015]" : "text-[#C93400]"
+                      }`}
+                    >
+                      {iss.severity === "error" ? "错误" : "建议提醒"}
                     </span>
                     <button
                       type="button"
@@ -633,13 +589,13 @@ export const App: React.FC = () => {
                           setActiveEditorTab(iss.section as EditorTab);
                         }
                       }}
-                      className="text-[11px] text-blue-400 hover:underline"
+                      className="text-[#0066CC] hover:underline"
                     >
-                      跳转查看
+                      定位
                     </button>
                   </div>
-                  <div className="font-semibold text-zinc-100">{iss.title}</div>
-                  <p className="text-[11px] text-zinc-300 leading-relaxed">{iss.message}</p>
+                  <div className="font-semibold text-[#1D1D1F]">{iss.title}</div>
+                  <p className="text-[#6E6E73] leading-relaxed">{iss.message}</p>
                   {iss.fix_action && (
                     <button
                       type="button"
@@ -654,7 +610,7 @@ export const App: React.FC = () => {
                         setIssues(nextIssues);
                         pushToast("success", msg);
                       }}
-                      className="w-full py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-medium flex items-center justify-center gap-1"
+                      className={`${applePrimaryBtnCls} w-full justify-center`}
                     >
                       <Sparkles className="w-3.5 h-3.5" /> 一键自动修正
                     </button>
@@ -668,19 +624,22 @@ export const App: React.FC = () => {
 
       <CommandPalette />
 
-      {/* Toast Notifications */}
+      {/* Crisp Floating Apple Pill Toasts */}
       <div className="fixed bottom-5 right-5 z-50 space-y-2 pointer-events-none">
         {toasts.map((t) => (
           <div
             key={t.id}
-            className={`px-4 py-2.5 rounded-xl border shadow-xl text-xs font-medium backdrop-blur-md pointer-events-auto ${
-              t.type === "error"
-                ? "bg-rose-950/90 border-rose-500/50 text-rose-200"
-                : t.type === "success"
-                ? "bg-emerald-950/90 border-emerald-500/50 text-emerald-200"
-                : "bg-zinc-900/95 border-zinc-700 text-zinc-100"
-            }`}
+            className="px-4 py-2.5 rounded-full bg-white/95 backdrop-blur-xl border border-black/[0.08] shadow-[0_8px_24px_rgba(0,0,0,0.12)] text-[12.5px] font-medium text-[#1D1D1F] flex items-center gap-2 pointer-events-auto"
           >
+            <span
+              className={`w-2 h-2 rounded-full ${
+                t.type === "error"
+                  ? "bg-[#FF3B30]"
+                  : t.type === "success"
+                  ? "bg-[#34C759]"
+                  : "bg-[#007AFF]"
+              }`}
+            />
             {t.text}
           </div>
         ))}

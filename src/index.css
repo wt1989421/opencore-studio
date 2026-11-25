@@ -2,19 +2,22 @@
 
 @layer base {
   :root {
-    color-scheme: dark;
+    color-scheme: light;
   }
   body {
-    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    background-color: #F5F5F7;
+    color: #1D1D1F;
     overflow: hidden;
     user-select: none;
+    -webkit-font-smoothing: antialiased;
   }
   input, textarea, code, pre {
     user-select: text;
   }
 }
 
-/* Custom sleek macOS dark scrollbars */
+/* Crisp macOS light scrollbars */
 ::-webkit-scrollbar {
   width: 7px;
   height: 7px;
@@ -23,9 +26,9 @@
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(113, 113, 122, 0.35);
+  background: rgba(0, 0, 0, 0.16);
   border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(161, 161, 170, 0.55);
+  background: rgba(0, 0, 0, 0.28);
 }

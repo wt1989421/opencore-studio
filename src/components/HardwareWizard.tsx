@@ -4,7 +4,6 @@ import {
   CheckCircle2,
   Cpu,
   FolderOutput,
-  HardDrive,
   Laptop,
   Monitor,
   Radar,
@@ -21,6 +20,13 @@ import {
 } from "../lib/tauri-bridge";
 import { useWorkspaceStore } from "../store/workspaceStore";
 import type { CompatibilityReport, HardwareProfile } from "../types/opencore";
+import {
+  SegmentedControl,
+  SettingsGroup,
+  SettingsRow,
+  applePrimaryBtnCls,
+  appleSecondaryBtnCls,
+} from "./AppleUI";
 
 export const HardwareWizard: React.FC = () => {
   const { loadWorkspace, setActiveModule, pushToast } = useWorkspaceStore();
@@ -58,7 +64,7 @@ export const HardwareWizard: React.FC = () => {
       setProfile(live);
       const rep = await apiEvaluateHardware(live);
       setReport(rep);
-      pushToast("success", "已完成本机底层硬件扫描与规则匹配");
+      pushToast("success", "已完成本机底层硬件扫描");
     } finally {
       setScanning(false);
     }
@@ -77,224 +83,161 @@ export const HardwareWizard: React.FC = () => {
     pushToast(
       "success",
       outDir
-        ? `已在 ${outDir}/EFI 生成全套 ${targetBootloader} 目录结构与专属 config.plist！`
-        : `已按当前硬件规则生成专属 ${targetBootloader} 配置并载入可视化编辑器！`
+        ? `已在 ${outDir}/EFI 生成全套 ${targetBootloader} 配置！`
+        : `已生成专属 ${targetBootloader} 配置并载入左侧设置面板！`
     );
   };
 
   return (
     <div className="space-y-6">
-      {/* Top Bar: Scan Live or Pick Reference Machine */}
-      <div className="bg-zinc-900/70 border border-zinc-800/80 rounded-2xl p-5 space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-4">
+      {/* Hero Banner Card */}
+      <div className="bg-white rounded-[16px] border border-black/[0.07] shadow-[0_2px_10px_rgba(0,0,0,0.03)] p-5 flex flex-wrap items-center justify-between gap-4">
+        <div className="flex items-center gap-3.5">
+          <div className="w-12 h-12 rounded-[12px] bg-gradient-to-b from-[#FF9F0A] to-[#FF6B00] text-white flex items-center justify-center shadow-sm">
+            <Radar className="w-6 h-6" />
+          </div>
           <div>
-            <h2 className="text-base font-semibold text-zinc-100 flex items-center gap-2">
-              <Radar className="w-5 h-5 text-blue-400" />
-              硬件嗅探 + Dortania 兼容性诊断 + 一键生成 EFI
+            <h2 className="text-[15px] font-bold text-[#1D1D1F]">
+              硬件检测与智能生成 EFI
             </h2>
-            <p className="text-xs text-zinc-400 mt-1">
-              自动探测本机硬件（或切换测试目标装机配置），精准排查黑名单固态、无驱动 RTX 独显并自动组装匹配的 SSDT、Kext 与 Quirks
+            <p className="text-[12px] text-[#86868B] mt-0.5">
+              自动探测本机硬件（或切换目标装机方案），排查无驱动独显与黑名单固态并一键生成专属配置
             </p>
           </div>
-          <button
-            type="button"
-            onClick={handleRescanLive}
-            disabled={scanning}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-xs font-semibold text-white transition"
-          >
-            <Cpu className="w-4 h-4" />
-            {scanning ? "扫描硬件中..." : "重新扫描本机硬件"}
-          </button>
         </div>
-
-        {/* Profile Selector Pills */}
-        {samples.length > 0 && (
-          <div className="space-y-1.5">
-            <span className="text-[11px] text-zinc-400">
-              切换本机硬件或典型装机测试画像（方便跨机器制作 EFI）：
-            </span>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-              {samples.map((s, idx) => {
-                const active = profile?.profile_name === s.profile_name;
-                return (
-                  <button
-                    key={idx}
-                    type="button"
-                    onClick={() => handleSelectProfile(s)}
-                    className={`text-left px-3.5 py-2.5 rounded-xl border text-xs transition flex items-center justify-between gap-2 ${
-                      active
-                        ? "bg-blue-950/35 border-blue-500/50 text-blue-100"
-                        : "bg-zinc-950/70 border-zinc-800 text-zinc-300 hover:border-zinc-700"
-                    }`}
-                  >
-                    <div className="flex items-center gap-2 min-w-0">
-                      {s.is_laptop ? (
-                        <Laptop className="w-4 h-4 text-blue-400 shrink-0" />
-                      ) : (
-                        <Monitor className="w-4 h-4 text-indigo-400 shrink-0" />
-                      )}
-                      <span className="truncate font-medium">{s.profile_name}</span>
-                    </div>
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400 shrink-0">
-                      {s.source}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        )}
+        <button
+          type="button"
+          onClick={handleRescanLive}
+          disabled={scanning}
+          className={appleSecondaryBtnCls}
+        >
+          <Cpu className="w-4 h-4 text-[#FF6B00]" />
+          {scanning ? "扫描中..." : "重新扫描本机"}
+        </button>
       </div>
 
-      {/* Compatibility Summary Banner */}
+      {/* Hardware Profile Picker Group */}
+      {samples.length > 0 && (
+        <SettingsGroup
+          title="选择目标硬件配置"
+          description="支持本机实时硬件或切换典型装机方案（含 AMD Ryzen 9 9900X 旗舰与笔记本排雷示例）"
+        >
+          {samples.map((s, idx) => {
+            const active = profile?.profile_name === s.profile_name;
+            return (
+              <SettingsRow
+                key={idx}
+                title={
+                  <span className="flex items-center gap-2">
+                    {s.is_laptop ? (
+                      <Laptop className="w-4 h-4 text-[#007AFF]" />
+                    ) : (
+                      <Monitor className="w-4 h-4 text-[#5E5CE6]" />
+                    )}
+                    <span className={active ? "font-semibold text-[#0066CC]" : ""}>
+                      {s.profile_name}
+                    </span>
+                  </span>
+                }
+                subtitle={`${s.cpu_model} · ${s.gpus.join(" / ")}`}
+                right={
+                  <button
+                    type="button"
+                    onClick={() => handleSelectProfile(s)}
+                    className={
+                      active
+                        ? "px-3 py-1 rounded-full bg-[#007AFF]/12 text-[#0066CC] text-[12px] font-semibold"
+                        : appleSecondaryBtnCls
+                    }
+                  >
+                    {active ? "当前选中" : "选用此配置"}
+                  </button>
+                }
+              />
+            );
+          })}
+        </SettingsGroup>
+      )}
+
+      {/* Compatibility Result & Action Bar */}
       {report && profile && (
         <>
-          <div
-            className={`rounded-2xl border p-5 flex flex-wrap items-center justify-between gap-4 ${
-              report.overall_status === "blocked"
-                ? "bg-rose-950/25 border-rose-500/40"
-                : report.overall_status === "caution"
-                ? "bg-amber-950/25 border-amber-500/40"
-                : "bg-emerald-950/25 border-emerald-500/40"
-            }`}
-          >
-            <div className="space-y-1.5 max-w-2xl">
-              <div className="flex items-center gap-2 text-sm font-semibold text-zinc-100">
-                {report.overall_status === "blocked" ? (
-                  <XCircle className="w-5 h-5 text-rose-400" />
-                ) : report.overall_status === "caution" ? (
-                  <AlertTriangle className="w-5 h-5 text-amber-400" />
-                ) : (
-                  <CheckCircle2 className="w-5 h-5 text-emerald-400" />
-                )}
-                <span>{report.summary_headline}</span>
+          <div className="bg-white rounded-[14px] border border-black/[0.08] p-5 space-y-4 shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div className="space-y-1 max-w-xl">
+                <div className="flex items-center gap-2 text-[14px] font-bold text-[#1D1D1F]">
+                  {report.overall_status === "blocked" ? (
+                    <XCircle className="w-5 h-5 text-[#FF3B30]" />
+                  ) : report.overall_status === "caution" ? (
+                    <AlertTriangle className="w-5 h-5 text-[#FF9500]" />
+                  ) : (
+                    <CheckCircle2 className="w-5 h-5 text-[#34C759]" />
+                  )}
+                  <span>{report.summary_headline}</span>
+                </div>
+                <div className="text-[12px] text-[#86868B]">
+                  推荐机型：<strong className="font-mono text-[#1D1D1F]">{report.recommended_smbios}</strong> ·
+                  推荐系统：<strong className="text-[#1D1D1F]">{report.recommended_macos}</strong>
+                </div>
               </div>
-              <div className="flex flex-wrap gap-3 text-xs text-zinc-300">
-                <span>
-                  推荐系统: <strong className="text-white">{report.recommended_macos}</strong>
-                </span>
-                <span>
-                  推荐 SMBIOS: <strong className="text-blue-300 font-mono">{report.recommended_smbios}</strong>
-                </span>
-                <span>
-                  推荐参数: <code className="text-emerald-300 font-mono">{report.recommended_boot_args}</code>
-                </span>
-              </div>
-            </div>
 
-            <div className="flex flex-wrap items-center gap-2.5">
-              {/* Target Bootloader Selector */}
-              <div className="flex rounded-xl bg-zinc-900/90 border border-zinc-700 p-1 text-xs">
+              <div className="flex flex-wrap items-center gap-2">
+                <SegmentedControl
+                  value={targetBootloader}
+                  onChange={(v) => setTargetBootloader(v as "OpenCore" | "Clover")}
+                  options={[
+                    { id: "OpenCore", label: "OpenCore" },
+                    { id: "Clover", label: "🍀 四叶草" },
+                  ]}
+                />
                 <button
                   type="button"
-                  onClick={() => setTargetBootloader("OpenCore")}
-                  className={`px-3 py-1.5 rounded-lg font-medium transition ${
-                    targetBootloader === "OpenCore"
-                      ? "bg-blue-600 text-white"
-                      : "text-zinc-400 hover:text-zinc-200"
-                  }`}
+                  onClick={() => handleGenerateIntoEditor(false)}
+                  className={applePrimaryBtnCls}
                 >
-                  OpenCore (推荐)
+                  <Sparkles className="w-3.5 h-3.5" />
+                  一键生成配置
                 </button>
                 <button
                   type="button"
-                  onClick={() => setTargetBootloader("Clover")}
-                  className={`px-3 py-1.5 rounded-lg font-medium transition ${
-                    targetBootloader === "Clover"
-                      ? "bg-emerald-600 text-white"
-                      : "text-zinc-400 hover:text-zinc-200"
-                  }`}
+                  onClick={() => handleGenerateIntoEditor(true)}
+                  className={appleSecondaryBtnCls}
                 >
-                  🍀 四叶草 Clover
+                  <FolderOutput className="w-3.5 h-3.5 text-[#007AFF]" />
+                  导出完整 EFI...
                 </button>
               </div>
-
-              <button
-                type="button"
-                onClick={() => handleGenerateIntoEditor(false)}
-                className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold text-white shadow-lg shadow-emerald-600/20 transition"
-              >
-                <Sparkles className="w-4 h-4" />
-                一键生成 {targetBootloader} 配置
-              </button>
-              <button
-                type="button"
-                onClick={() => handleGenerateIntoEditor(true)}
-                className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-xs font-semibold text-zinc-100 transition"
-              >
-                <FolderOutput className="w-4 h-4 text-blue-400" />
-                导出完整 EFI 目录...
-              </button>
             </div>
           </div>
 
-          {/* Per-Component Diagnostic Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Per-Component Diagnostic Rows */}
+          <SettingsGroup title="硬件兼容性逐项评估建议">
             {report.items.map((item, idx) => (
-              <div
+              <SettingsRow
                 key={idx}
-                className="bg-zinc-900/60 border border-zinc-800/80 rounded-xl p-4 space-y-2"
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <span className="text-[11px] text-zinc-400">{item.category}</span>
-                    <h4 className="text-xs font-semibold text-zinc-100 mt-0.5">
-                      {item.hardware_name}
-                    </h4>
-                  </div>
+                title={
+                  <span className="flex items-center gap-2">
+                    <span className="text-[#86868B] font-normal">{item.category}：</span>
+                    <span>{item.hardware_name}</span>
+                  </span>
+                }
+                subtitle={item.advice}
+                right={
                   <span
-                    className={`px-2 py-0.5 rounded-full text-[11px] font-medium shrink-0 border ${
+                    className={`px-2.5 py-1 rounded-full text-[11.5px] font-semibold ${
                       item.status === "supported"
-                        ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/30"
+                        ? "bg-[#34C759]/12 text-[#248A3D]"
                         : item.status === "partial"
-                        ? "bg-amber-500/15 text-amber-300 border-amber-500/30"
-                        : "bg-rose-500/15 text-rose-300 border-rose-500/30"
+                        ? "bg-[#FF9500]/15 text-[#C93400]"
+                        : "bg-[#FF3B30]/12 text-[#D70015]"
                     }`}
                   >
                     {item.badge_text}
                   </span>
-                </div>
-                <p className="text-xs text-zinc-300/90 leading-relaxed">{item.advice}</p>
-              </div>
+                }
+              />
             ))}
-          </div>
-
-          {/* Required SSDT & Kext Blueprint */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="bg-zinc-900/50 border border-zinc-800/80 rounded-xl p-4">
-              <h4 className="text-xs font-semibold text-zinc-200 mb-2.5 flex items-center gap-1.5">
-                <HardDrive className="w-4 h-4 text-purple-400" />
-                自动规划所需 ACPI 热补丁 (SSDT)
-              </h4>
-              <div className="flex flex-wrap gap-1.5">
-                {report.required_ssdts.map((s) => (
-                  <span
-                    key={s}
-                    className="px-2.5 py-1 rounded-lg bg-purple-500/10 border border-purple-500/30 font-mono text-xs text-purple-200"
-                  >
-                    {s}
-                  </span>
-                ))}
-              </div>
-            </div>
-
-            <div className="bg-zinc-900/50 border border-zinc-800/80 rounded-xl p-4">
-              <h4 className="text-xs font-semibold text-zinc-200 mb-2.5 flex items-center gap-1.5">
-                <Cpu className="w-4 h-4 text-blue-400" />
-                自动规划所需核心驱动包 (Kexts)
-              </h4>
-              <div className="flex flex-wrap gap-1.5">
-                {report.required_kexts.map((k) => (
-                  <span
-                    key={k}
-                    className="px-2.5 py-1 rounded-lg bg-blue-500/10 border border-blue-500/30 font-mono text-xs text-blue-200"
-                  >
-                    {k}
-                  </span>
-                ))}
-              </div>
-            </div>
-          </div>
+          </SettingsGroup>
         </>
       )}
     </div>
