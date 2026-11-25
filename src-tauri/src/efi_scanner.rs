@@ -24,40 +24,57 @@ pub struct EfiScanResult {
     pub kexts: Vec<ScannedKext>,
 }
 
-/// Resolves either an `EFI` root folder, an `EFI/OC` folder, or a direct `config.plist` path
-/// into `(Option<PathBuf> oc_dir, PathBuf config_path)`.
+/// Resolves either an `EFI` root folder, an `EFI/OC` or `EFI/CLOVER` folder, or a direct `config.plist` path
+/// into `(Option<PathBuf> bootloader_dir, PathBuf config_path)`.
 pub fn resolve_efi_paths(input_path: &Path) -> Result<(Option<PathBuf>, PathBuf), String> {
     if input_path.is_file() {
-        let oc_dir = input_path.parent().and_then(|p| {
-            if p.join("Kexts").is_dir() || p.join("ACPI").is_dir() || p.join("Drivers").is_dir() {
+        let bl_dir = input_path.parent().and_then(|p| {
+            if p.join("Kexts").is_dir()
+                || p.join("ACPI").is_dir()
+                || p.join("Drivers").is_dir()
+                || p.join("kexts").is_dir()
+                || p.join("drivers").is_dir()
+            {
                 Some(p.to_path_buf())
             } else {
                 None
             }
         });
-        return Ok((oc_dir, input_path.to_path_buf()));
+        return Ok((bl_dir, input_path.to_path_buf()));
     }
 
     if input_path.is_dir() {
-        // Case 1: Selected folder contains EFI/OC/config.plist
-        let candidate1 = input_path.join("EFI").join("OC");
-        if candidate1.join("config.plist").is_file() {
-            let cfg = candidate1.join("config.plist");
-            return Ok((Some(candidate1), cfg));
+        // Case 1: Selected folder contains EFI/OC/config.plist or EFI/CLOVER/config.plist
+        let oc1 = input_path.join("EFI").join("OC");
+        if oc1.join("config.plist").is_file() {
+            let cfg = oc1.join("config.plist");
+            return Ok((Some(oc1), cfg));
         }
-        // Case 2: Selected folder contains OC/config.plist
-        let candidate2 = input_path.join("OC");
-        if candidate2.join("config.plist").is_file() {
-            let cfg = candidate2.join("config.plist");
-            return Ok((Some(candidate2), cfg));
+        let clv1 = input_path.join("EFI").join("CLOVER");
+        if clv1.join("config.plist").is_file() {
+            let cfg = clv1.join("config.plist");
+            return Ok((Some(clv1), cfg));
         }
-        // Case 3: Selected folder IS OC/
+
+        // Case 2: Selected folder contains OC/config.plist or CLOVER/config.plist
+        let oc2 = input_path.join("OC");
+        if oc2.join("config.plist").is_file() {
+            let cfg = oc2.join("config.plist");
+            return Ok((Some(oc2), cfg));
+        }
+        let clv2 = input_path.join("CLOVER");
+        if clv2.join("config.plist").is_file() {
+            let cfg = clv2.join("config.plist");
+            return Ok((Some(clv2), cfg));
+        }
+
+        // Case 3: Selected folder IS OC/ or CLOVER/
         if input_path.join("config.plist").is_file() {
             let cfg = input_path.join("config.plist");
             return Ok((Some(input_path.to_path_buf()), cfg));
         }
         return Err(format!(
-            "在所选目录中未找到 EFI/OC/config.plist 或 config.plist: {}",
+            "在所选目录中未找到 EFI/OC/config.plist、EFI/CLOVER/config.plist 或 config.plist: {}",
             input_path.display()
         ));
     }

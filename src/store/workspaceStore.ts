@@ -10,6 +10,7 @@ import {
 import { apiValidatePlist, isTauriRuntime } from "../lib/tauri-bridge";
 
 export type MainModule = "editor" | "hardware" | "toolbox";
+export type BootloaderMode = "OpenCore" | "Clover";
 
 export type EditorTab =
   | "ACPI"
@@ -23,6 +24,20 @@ export type EditorTab =
   | "RawTree"
   | "XmlPreview";
 
+export type CloverTab =
+  | "ACPI"
+  | "Boot"
+  | "Devices"
+  | "GUI"
+  | "Graphics"
+  | "KernelAndKextPatches"
+  | "Quirks"
+  | "RtVariables"
+  | "SMBIOS"
+  | "SystemParameters"
+  | "RawTree"
+  | "XmlPreview";
+
 interface ToastMessage {
   id: number;
   type: "success" | "error" | "info";
@@ -30,8 +45,10 @@ interface ToastMessage {
 }
 
 interface WorkspaceState {
+  bootloader: BootloaderMode;
   activeModule: MainModule;
   activeEditorTab: EditorTab;
+  activeCloverTab: CloverTab;
   toolboxTab: "log" | "audio" | "esp" | "converter";
 
   workspaceTitle: string;
@@ -45,6 +62,7 @@ interface WorkspaceState {
   scan: EfiScanResult | null;
   issues: ValidationIssue[];
   backups: BackupSnapshot[];
+  migrationNotes: string[];
 
   showIssuesDrawer: boolean;
   showCommandPalette: boolean;
@@ -52,9 +70,12 @@ interface WorkspaceState {
 
   setActiveModule: (mod: MainModule) => void;
   setActiveEditorTab: (tab: EditorTab) => void;
+  setActiveCloverTab: (tab: CloverTab) => void;
   setToolboxTab: (tab: "log" | "audio" | "esp" | "converter") => void;
   setShowIssuesDrawer: (open: boolean) => void;
   setShowCommandPalette: (open: boolean) => void;
+  clearMigrationNotes: () => void;
+  setMigrationNotes: (notes: string[]) => void;
 
   loadWorkspace: (payload: LoadedWorkspacePayload) => void;
   updatePlistPath: (path: string[], value: PlistNode) => void;
@@ -84,11 +105,13 @@ const EMPTY_PLIST: PlistNode = {
 let toastSeq = 1;
 
 export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
+  bootloader: "OpenCore",
   activeModule: "editor",
   activeEditorTab: "ACPI",
+  activeCloverTab: "ACPI",
   toolboxTab: "log",
 
-  workspaceTitle: "未命名配置 (OpenCore 1.0.3)",
+  workspaceTitle: "未命名配置 (OpenCore)",
   configPath: null,
   ocDir: null,
   plist: EMPTY_PLIST,
@@ -99,6 +122,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   scan: null,
   issues: [],
   backups: [],
+  migrationNotes: [],
 
   showIssuesDrawer: false,
   showCommandPalette: false,
@@ -106,12 +130,18 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
 
   setActiveModule: (activeModule) => set({ activeModule }),
   setActiveEditorTab: (activeEditorTab) => set({ activeEditorTab }),
+  setActiveCloverTab: (activeCloverTab) => set({ activeCloverTab }),
   setToolboxTab: (toolboxTab) => set({ toolboxTab }),
   setShowIssuesDrawer: (showIssuesDrawer) => set({ showIssuesDrawer }),
   setShowCommandPalette: (showCommandPalette) => set({ showCommandPalette }),
+  clearMigrationNotes: () => set({ migrationNotes: [] }),
+  setMigrationNotes: (migrationNotes) => set({ migrationNotes }),
 
-  loadWorkspace: (payload) =>
+  loadWorkspace: (payload) => {
+    const mode: BootloaderMode =
+      payload.bootloader === "Clover" ? "Clover" : "OpenCore";
     set({
+      bootloader: mode,
       workspaceTitle: payload.title,
       configPath: payload.config_path ?? null,
       ocDir: payload.oc_dir ?? null,
@@ -122,7 +152,9 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       scan: payload.scan ?? null,
       issues: payload.issues ?? [],
       backups: payload.backups ?? [],
-    }),
+      migrationNotes: [],
+    });
+  },
 
   updatePlistPath: (path, value) => {
     const { plist, past, ocDir } = get();
@@ -192,6 +224,6 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     set((s) => ({ toasts: [...s.toasts, { id, type, text }] }));
     setTimeout(() => {
       set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) }));
-    }, 3600);
+    }, 3800);
   },
 }));

@@ -128,6 +128,12 @@ export async function apiApplyQuickFix(
   });
 }
 
+export async function apiMigrateCloverToOpenCore(
+  plist: PlistNode
+): Promise<[LoadedWorkspacePayload, string[]]> {
+  return invoke<[LoadedWorkspacePayload, string[]]>("cmd_migrate_clover_to_opencore", { plist });
+}
+
 export async function apiListSmbiosModels(): Promise<SmbiosModelOption[]> {
   return invoke<SmbiosModelOption[]>("cmd_list_smbios_models");
 }
@@ -150,11 +156,13 @@ export async function apiEvaluateHardware(profile: HardwareProfile): Promise<Com
 
 export async function apiGenerateEfiFromHardware(
   profile: HardwareProfile,
-  outputDir?: string | null
+  outputDir?: string | null,
+  bootloader: "OpenCore" | "Clover" = "OpenCore"
 ): Promise<LoadedWorkspacePayload> {
   return invoke<LoadedWorkspacePayload>("cmd_generate_efi_from_hardware", {
     profile,
     outputDir: outputDir ?? null,
+    bootloader,
   });
 }
 

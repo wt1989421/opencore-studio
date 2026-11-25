@@ -17,6 +17,19 @@ import {
   Wrench,
   X,
 } from "lucide-react";
+import {
+  CloverAcpiSection,
+  CloverBootSection,
+  CloverDevicesSection,
+  CloverGraphicsSection,
+  CloverGuiSection,
+  CloverKernelPatchesSection,
+  CloverMigrationBanner,
+  CloverQuirksSection,
+  CloverRtAndSysSection,
+  CloverSmbiosSection,
+  MigrationNotesAlert,
+} from "./components/CloverSections";
 import { CommandPalette } from "./components/CommandPalette";
 import {
   AcpiSection,
@@ -43,10 +56,14 @@ import {
   apiSyncOcDirectory,
   isTauriRuntime,
 } from "./lib/tauri-bridge";
-import { useWorkspaceStore, type EditorTab } from "./store/workspaceStore";
+import {
+  useWorkspaceStore,
+  type CloverTab,
+  type EditorTab,
+} from "./store/workspaceStore";
 import type { PresetMeta } from "./types/opencore";
 
-const EDITOR_TABS: { id: EditorTab; label: string; badge?: string }[] = [
+const EDITOR_TABS: { id: EditorTab; label: string }[] = [
   { id: "ACPI", label: "ACPI" },
   { id: "Booter", label: "Booter" },
   { id: "DeviceProperties", label: "DeviceProperties" },
@@ -59,10 +76,26 @@ const EDITOR_TABS: { id: EditorTab; label: string; badge?: string }[] = [
   { id: "XmlPreview", label: "XML 源码" },
 ];
 
+const CLOVER_TABS: { id: CloverTab; label: string }[] = [
+  { id: "ACPI", label: "ACPI (DSDT/SSDT)" },
+  { id: "Boot", label: "Boot (引导参数)" },
+  { id: "Devices", label: "Devices (声卡/USB)" },
+  { id: "GUI", label: "GUI (主题/分辨率)" },
+  { id: "Graphics", label: "Graphics (显卡注入)" },
+  { id: "KernelAndKextPatches", label: "KernelPatches" },
+  { id: "Quirks", label: "Quirks (r5123+)" },
+  { id: "RtVariables", label: "RtVariables & 驱动注入" },
+  { id: "SMBIOS", label: "SMBIOS (四叶草三码)" },
+  { id: "RawTree", label: "原始 Plist 树" },
+  { id: "XmlPreview", label: "XML 源码" },
+];
+
 export const App: React.FC = () => {
   const {
+    bootloader,
     activeModule,
     activeEditorTab,
+    activeCloverTab,
     workspaceTitle,
     configPath,
     ocDir,
@@ -76,6 +109,7 @@ export const App: React.FC = () => {
     toasts,
     setActiveModule,
     setActiveEditorTab,
+    setActiveCloverTab,
     setShowIssuesDrawer,
     setShowCommandPalette,
     loadWorkspace,
@@ -103,6 +137,20 @@ export const App: React.FC = () => {
   const errorCount = issues.filter((i) => i.severity === "error").length;
   const warnCount = issues.filter((i) => i.severity === "warning").length;
 
+  const handleSwitchBootloaderPreset = async (target: "OpenCore" | "Clover") => {
+    if (!isTauriRuntime()) return;
+    const presetId = target === "Clover" ? "clover_intel_modern" : "intel_10th_desktop";
+    const payload = await apiLoadPreset(presetId);
+    loadWorkspace(payload);
+    setActiveModule("editor");
+    pushToast(
+      "info",
+      target === "Clover"
+        ? "已切换至四叶草 Clover 配置模式"
+        : "已切换至 OpenCore 配置模式"
+    );
+  };
+
   const handleOpenEfiFolder = async () => {
     try {
       const folder = await apiPickEfiFolder();
@@ -110,7 +158,10 @@ export const App: React.FC = () => {
       const payload = await apiOpenEfiOrPlist(folder);
       loadWorkspace(payload);
       setActiveModule("editor");
-      pushToast("success", `已成功加载 EFI 目录: ${folder}`);
+      pushToast(
+        "success",
+        `已自动识别为 ${payload.bootloader ?? "OpenCore"} 并加载目录: ${folder}`
+      );
     } catch (e) {
       pushToast("error", String(e));
     }
@@ -123,7 +174,10 @@ export const App: React.FC = () => {
       const payload = await apiOpenEfiOrPlist(file);
       loadWorkspace(payload);
       setActiveModule("editor");
-      pushToast("success", `已打开配置文件: ${file}`);
+      pushToast(
+        "success",
+        `已自动识别为 ${payload.bootloader ?? "OpenCore"} 配置: ${file}`
+      );
     } catch (e) {
       pushToast("error", String(e));
     }
@@ -141,7 +195,7 @@ export const App: React.FC = () => {
       setScanAndIssues(scanRes, nextIssues);
       pushToast(
         "success",
-        `已扫描同步 ${scanRes.acpi_files.length} 个 ACPI、${scanRes.kexts.length} 个驱动（已完成依赖拓扑排序）`
+        `已扫描同步 ${scanRes.acpi_files.length} 个 ACPI、${scanRes.kexts.length} 个驱动`
       );
     } catch (e) {
       pushToast("error", String(e));
@@ -163,20 +217,54 @@ export const App: React.FC = () => {
     }
   };
 
+  const isClover = bootloader === "Clover";
+
   return (
     <div className="h-screen w-screen flex bg-zinc-950 text-zinc-100 overflow-hidden">
       {/* Left macOS Translucent Sidebar */}
-      <aside className="w-64 shrink-0 bg-zinc-900/80 border-r border-zinc-800/80 flex flex-col justify-between p-3.5">
-        <div className="space-y-6">
+      <aside className="w-64 shrink-0 bg-zinc-900/80 border-r border-zinc-800/80 flex flex-col justify-between p-3.5 overflow-y-auto">
+        <div className="space-y-5">
           {/* App Brand Header */}
           <div className="flex items-center gap-3 px-2 pt-1">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-600/25">
+            <div
+              className={`w-9 h-9 rounded-xl flex items-center justify-center shadow-lg ${
+                isClover
+                  ? "bg-gradient-to-br from-emerald-500 to-teal-600 shadow-emerald-600/25"
+                  : "bg-gradient-to-br from-blue-500 to-indigo-600 shadow-blue-600/25"
+              }`}
+            >
               <Layers className="w-5 h-5 text-white" />
             </div>
             <div>
               <div className="text-sm font-bold tracking-tight text-white">OpenCore Studio</div>
-              <div className="text-[11px] text-zinc-400">黑苹果一站式配置工作台</div>
+              <div className="text-[11px] text-zinc-400">OC + 四叶草双引擎工作台</div>
             </div>
+          </div>
+
+          {/* Dual Bootloader Mode Switcher */}
+          <div className="bg-zinc-950/90 border border-zinc-800 p-1 rounded-xl grid grid-cols-2 gap-1 text-xs">
+            <button
+              type="button"
+              onClick={() => handleSwitchBootloaderPreset("OpenCore")}
+              className={`py-1.5 rounded-lg font-semibold transition ${
+                !isClover
+                  ? "bg-blue-600 text-white shadow"
+                  : "text-zinc-400 hover:text-zinc-200"
+              }`}
+            >
+              OpenCore
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSwitchBootloaderPreset("Clover")}
+              className={`py-1.5 rounded-lg font-semibold transition ${
+                isClover
+                  ? "bg-emerald-600 text-white shadow"
+                  : "text-zinc-400 hover:text-zinc-200"
+              }`}
+            >
+              🍀 四叶草 Clover
+            </button>
           </div>
 
           {/* Primary 3 Pillars Navigation */}
@@ -189,7 +277,9 @@ export const App: React.FC = () => {
               onClick={() => setActiveModule("editor")}
               className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-medium transition ${
                 activeModule === "editor"
-                  ? "bg-blue-600 text-white shadow-md shadow-blue-600/20"
+                  ? isClover
+                    ? "bg-emerald-600 text-white shadow-md shadow-emerald-600/20"
+                    : "bg-blue-600 text-white shadow-md shadow-blue-600/20"
                   : "text-zinc-300 hover:bg-zinc-800/70"
               }`}
             >
@@ -227,7 +317,7 @@ export const App: React.FC = () => {
           {/* Quick Open / Presets Panel */}
           <div className="space-y-2 pt-2 border-t border-zinc-800/80">
             <div className="px-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
-              文件与标准模板
+              文件与标准模板 (自动识别 OC / 四叶草)
             </div>
             <button
               type="button"
@@ -235,7 +325,7 @@ export const App: React.FC = () => {
               className="w-full flex items-center gap-2 px-3 py-2 rounded-lg bg-zinc-800/70 hover:bg-zinc-800 text-xs text-zinc-200 transition"
             >
               <FolderOpen className="w-4 h-4 text-blue-400" />
-              打开 EFI 文件夹...
+              打开 EFI 文件夹 (OC/Clover)...
             </button>
             <button
               type="button"
@@ -254,11 +344,11 @@ export const App: React.FC = () => {
               >
                 <span className="flex items-center gap-2">
                   <FilePlus2 className="w-4 h-4 text-purple-400" />
-                  新建平台标准预设
+                  新建 OpenCore / 四叶草预设
                 </span>
               </button>
               {showPresetMenu && (
-                <div className="mt-1.5 bg-zinc-950 border border-zinc-700 rounded-xl p-1.5 space-y-1 shadow-xl">
+                <div className="mt-1.5 bg-zinc-950 border border-zinc-700 rounded-xl p-1.5 space-y-1 shadow-xl max-h-64 overflow-y-auto">
                   {presets.map((p) => (
                     <button
                       key={p.id}
@@ -283,16 +373,24 @@ export const App: React.FC = () => {
         </div>
 
         {/* Bottom Workspace & Snapshot Status */}
-        <div className="bg-zinc-950/70 border border-zinc-800/80 rounded-xl p-3 space-y-1.5 text-[11px]">
+        <div className="mt-4 bg-zinc-950/70 border border-zinc-800/80 rounded-xl p-3 space-y-1.5 text-[11px]">
           <div className="flex items-center justify-between text-zinc-400">
-            <span>当前工作区</span>
+            <span
+              className={`px-1.5 py-0.5 rounded font-semibold ${
+                isClover
+                  ? "bg-emerald-500/15 text-emerald-300"
+                  : "bg-blue-500/15 text-blue-300"
+              }`}
+            >
+              {isClover ? "🍀 Clover" : "OpenCore"}
+            </span>
             {isDirty && <span className="text-amber-400 font-medium">● 未保存修改</span>}
           </div>
           <div className="text-zinc-200 font-medium truncate" title={workspaceTitle}>
             {workspaceTitle}
           </div>
           {backups.length > 0 && (
-            <div className="text-emerald-400/90">已保存 {backups.length} 份本地安全备份快照</div>
+            <div className="text-emerald-400/90">已保存 {backups.length} 份本地安全快照</div>
           )}
         </div>
       </aside>
@@ -355,7 +453,7 @@ export const App: React.FC = () => {
                 <CheckCircle2 className="w-3.5 h-3.5" />
               )}
               <span>
-                OC 校验:{" "}
+                {isClover ? "四叶草校验" : "OC 校验"}:{" "}
                 {errorCount === 0 && warnCount === 0
                   ? "全部通过"
                   : `${errorCount} 错误 · ${warnCount} 提醒`}
@@ -368,13 +466,17 @@ export const App: React.FC = () => {
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-xs text-zinc-200 transition"
             >
               <FolderSync className="w-3.5 h-3.5 text-blue-400" />
-              扫描同步 OC 目录
+              扫描同步 {isClover ? "CLOVER" : "OC"} 目录
             </button>
 
             <button
               type="button"
               onClick={() => handleSave(false)}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-xs font-semibold text-white transition"
+              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold text-white transition ${
+                isClover
+                  ? "bg-emerald-600 hover:bg-emerald-500"
+                  : "bg-blue-600 hover:bg-blue-500"
+              }`}
             >
               <Save className="w-3.5 h-3.5" />
               保存配置
@@ -390,8 +492,8 @@ export const App: React.FC = () => {
           </div>
         </header>
 
-        {/* OpenCore 8-Node Subbar when in Editor Module */}
-        {activeModule === "editor" && (
+        {/* Subbar Tabs in Editor Module */}
+        {activeModule === "editor" && !isClover && (
           <div className="px-5 pt-3 pb-2 border-b border-zinc-900 bg-zinc-950/80 flex items-center gap-1.5 overflow-x-auto shrink-0">
             {EDITOR_TABS.map((tab) => {
               const tabIssues = issues.filter(
@@ -421,10 +523,33 @@ export const App: React.FC = () => {
           </div>
         )}
 
+        {activeModule === "editor" && isClover && (
+          <div className="px-5 pt-3 pb-2 border-b border-zinc-900 bg-zinc-950/80 flex items-center gap-1.5 overflow-x-auto shrink-0">
+            {CLOVER_TABS.map((tab) => {
+              const active = activeCloverTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setActiveCloverTab(tab.id)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition ${
+                    active
+                      ? "bg-emerald-950/60 text-emerald-200 border border-emerald-500/40"
+                      : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900"
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
         {/* Scrollable Workspace Body */}
         <main className="flex-1 overflow-y-auto p-6">
-          {activeModule === "editor" && (
+          {activeModule === "editor" && !isClover && (
             <>
+              <MigrationNotesAlert />
               {activeEditorTab === "ACPI" && <AcpiSection />}
               {activeEditorTab === "Booter" && <BooterSection />}
               {activeEditorTab === "DeviceProperties" && <DevicePropertiesSection />}
@@ -438,17 +563,34 @@ export const App: React.FC = () => {
             </>
           )}
 
+          {activeModule === "editor" && isClover && (
+            <>
+              <CloverMigrationBanner />
+              {activeCloverTab === "ACPI" && <CloverAcpiSection />}
+              {activeCloverTab === "Boot" && <CloverBootSection />}
+              {activeCloverTab === "Devices" && <CloverDevicesSection />}
+              {activeCloverTab === "GUI" && <CloverGuiSection />}
+              {activeCloverTab === "Graphics" && <CloverGraphicsSection />}
+              {activeCloverTab === "KernelAndKextPatches" && <CloverKernelPatchesSection />}
+              {activeCloverTab === "Quirks" && <CloverQuirksSection />}
+              {activeCloverTab === "RtVariables" && <CloverRtAndSysSection />}
+              {activeCloverTab === "SMBIOS" && <CloverSmbiosSection />}
+              {activeCloverTab === "RawTree" && <RawPlistTreeView />}
+              {activeCloverTab === "XmlPreview" && <XmlSourcePreview />}
+            </>
+          )}
+
           {activeModule === "hardware" && <HardwareWizard />}
           {activeModule === "toolbox" && <ToolboxPanel />}
         </main>
       </div>
 
-      {/* Right Slide-Over OC Validator Drawer */}
+      {/* Right Slide-Over Validator Drawer */}
       {showIssuesDrawer && (
         <div className="w-96 shrink-0 border-l border-zinc-800 bg-zinc-900/95 p-4 flex flex-col">
           <div className="flex items-center justify-between pb-3 border-b border-zinc-800">
             <h3 className="text-sm font-semibold text-zinc-100">
-              OpenCore 配置实时校验报告 ({issues.length})
+              {isClover ? "四叶草 Clover" : "OpenCore"} 配置校验报告 ({issues.length})
             </h3>
             <button
               type="button"
@@ -464,9 +606,6 @@ export const App: React.FC = () => {
               <div className="py-12 text-center space-y-2">
                 <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto" />
                 <div className="text-xs font-medium text-zinc-200">所有核心规则校验全部通过！</div>
-                <p className="text-[11px] text-zinc-500">
-                  未发现 Quirk 互斥冲突、驱动依赖乱序或缺失引导组件。
-                </p>
               </div>
             ) : (
               issues.map((iss) => (
@@ -488,7 +627,11 @@ export const App: React.FC = () => {
                       type="button"
                       onClick={() => {
                         setActiveModule("editor");
-                        setActiveEditorTab(iss.section as EditorTab);
+                        if (isClover) {
+                          setActiveCloverTab(iss.section as CloverTab);
+                        } else {
+                          setActiveEditorTab(iss.section as EditorTab);
+                        }
                       }}
                       className="text-[11px] text-blue-400 hover:underline"
                     >
@@ -523,7 +666,6 @@ export const App: React.FC = () => {
         </div>
       )}
 
-      {/* Command Palette (Cmd/Ctrl + K) */}
       <CommandPalette />
 
       {/* Toast Notifications */}

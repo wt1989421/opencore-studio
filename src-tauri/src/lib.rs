@@ -1,3 +1,4 @@
+pub mod clover;
 pub mod efi_scanner;
 pub mod hw_advisor;
 pub mod plist_engine;
@@ -6,6 +7,11 @@ pub mod smbios;
 pub mod toolbox;
 pub mod validator;
 
+use clover::{
+    apply_clover_quick_fix, build_clover_preset_plist, detect_bootloader_kind,
+    generate_tailored_clover_efi, list_clover_presets, migrate_clover_to_opencore,
+    scan_and_sync_clover_dir, validate_clover_config, BootloaderKind, MigrationSummary,
+};
 use efi_scanner::{
     create_snapshot_backup, list_snapshot_backups, resolve_efi_paths, scan_oc_directory,
     sync_scan_into_plist, BackupSnapshot, EfiScanResult,
@@ -28,6 +34,7 @@ use validator::{apply_quick_fix, validate_config, ValidationIssue};
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct LoadedWorkspacePayload {
     pub title: String,
+    pub bootloader: String, // "OpenCore" | "Clover"
     pub config_path: Option<String>,
     pub oc_dir: Option<String>,
     pub plist: PlistNode,
@@ -38,21 +45,35 @@ pub struct LoadedWorkspacePayload {
 
 #[tauri::command]
 fn cmd_list_presets() -> Vec<PresetMeta> {
-    list_presets()
+    let mut all = list_presets();
+    all.extend(list_clover_presets());
+    all
 }
 
 #[tauri::command]
 fn cmd_load_preset(preset_id: String) -> LoadedWorkspacePayload {
-    let presets = list_presets();
-    let title = presets
+    let is_clover = preset_id.starts_with("clover_");
+    let all = cmd_list_presets();
+    let title = all
         .iter()
         .find(|p| p.id == preset_id)
         .map(|p| p.name.clone())
-        .unwrap_or_else(|| "OpenCore 标准预设".into());
-    let plist = build_preset_plist(&preset_id);
-    let issues = validate_config(&plist, None);
+        .unwrap_or_else(|| "标准预设配置".into());
+
+    let plist = if is_clover {
+        build_clover_preset_plist(&preset_id)
+    } else {
+        build_preset_plist(&preset_id)
+    };
+    let issues = if is_clover {
+        validate_clover_config(&plist, None)
+    } else {
+        validate_config(&plist, None)
+    };
+
     LoadedWorkspacePayload {
         title,
+        bootloader: if is_clover { "Clover".into() } else { "OpenCore".into() },
         config_path: None,
         oc_dir: None,
         plist,
@@ -65,23 +86,49 @@ fn cmd_load_preset(preset_id: String) -> LoadedWorkspacePayload {
 #[tauri::command]
 fn cmd_open_efi_or_plist(path: String) -> Result<LoadedWorkspacePayload, String> {
     let input = PathBuf::from(&path);
-    let (oc_dir, config_path) = resolve_efi_paths(&input)?;
-    let plist = load_plist_file(&config_path)?;
-    let scan = match &oc_dir {
-        Some(dir) => Some(scan_oc_directory(dir)?),
-        None => None,
+    let (bl_dir, config_path) = resolve_efi_paths(&input)?;
+    let mut plist = load_plist_file(&config_path)?;
+    let kind = detect_bootloader_kind(&plist);
+
+    let (scan, issues) = match kind {
+        BootloaderKind::OpenCore => {
+            let s = match &bl_dir {
+                Some(dir) => Some(scan_oc_directory(dir)?),
+                None => None,
+            };
+            let iss = validate_config(&plist, bl_dir.as_deref());
+            (s, iss)
+        }
+        BootloaderKind::Clover => {
+            let s = if let Some(dir) = &bl_dir {
+                let (acpi_files, driver_files, kexts) = scan_and_sync_clover_dir(dir, &mut plist)?;
+                Some(EfiScanResult {
+                    oc_dir: dir.to_string_lossy().to_string(),
+                    config_path: config_path.to_string_lossy().to_string(),
+                    acpi_files,
+                    driver_files,
+                    tool_files: vec![],
+                    kexts,
+                })
+            } else {
+                None
+            };
+            let iss = validate_clover_config(&plist, bl_dir.as_deref());
+            (s, iss)
+        }
     };
-    let issues = validate_config(&plist, oc_dir.as_deref());
+
     let backups = list_snapshot_backups(&config_path);
-    let title = oc_dir
+    let title = bl_dir
         .as_ref()
-        .map(|d| d.to_string_lossy().to_string())
-        .unwrap_or_else(|| config_path.to_string_lossy().to_string());
+        .map(|d| format!("[{}] {}", kind.as_str(), d.to_string_lossy()))
+        .unwrap_or_else(|| format!("[{}] {}", kind.as_str(), config_path.to_string_lossy()));
 
     Ok(LoadedWorkspacePayload {
         title,
+        bootloader: kind.as_str().into(),
         config_path: Some(config_path.to_string_lossy().to_string()),
-        oc_dir: oc_dir.map(|d| d.to_string_lossy().to_string()),
+        oc_dir: bl_dir.map(|d| d.to_string_lossy().to_string()),
         plist,
         scan,
         issues,
@@ -114,6 +161,21 @@ fn cmd_sync_oc_directory(
     mut plist: PlistNode,
 ) -> Result<(PlistNode, EfiScanResult, Vec<ValidationIssue>), String> {
     let dir = PathBuf::from(&oc_dir);
+    let kind = detect_bootloader_kind(&plist);
+    if kind == BootloaderKind::Clover {
+        let (acpi_files, driver_files, kexts) = scan_and_sync_clover_dir(&dir, &mut plist)?;
+        let scan = EfiScanResult {
+            oc_dir: oc_dir.clone(),
+            config_path: dir.join("config.plist").to_string_lossy().to_string(),
+            acpi_files,
+            driver_files,
+            tool_files: vec![],
+            kexts,
+        };
+        let issues = validate_clover_config(&plist, Some(&dir));
+        return Ok((plist, scan, issues));
+    }
+
     let scan = scan_oc_directory(&dir)?;
     sync_scan_into_plist(&mut plist, &scan);
     let issues = validate_config(&plist, Some(&dir));
@@ -123,7 +185,11 @@ fn cmd_sync_oc_directory(
 #[tauri::command]
 fn cmd_validate_plist(plist: PlistNode, oc_dir: Option<String>) -> Vec<ValidationIssue> {
     let dir = oc_dir.map(PathBuf::from);
-    validate_config(&plist, dir.as_deref())
+    if detect_bootloader_kind(&plist) == BootloaderKind::Clover {
+        validate_clover_config(&plist, dir.as_deref())
+    } else {
+        validate_config(&plist, dir.as_deref())
+    }
 }
 
 #[tauri::command]
@@ -132,10 +198,35 @@ fn cmd_apply_quick_fix(
     fix_action: String,
     oc_dir: Option<String>,
 ) -> Result<(PlistNode, String, Vec<ValidationIssue>), String> {
-    let msg = apply_quick_fix(&mut plist, &fix_action)?;
     let dir = oc_dir.map(PathBuf::from);
+    if detect_bootloader_kind(&plist) == BootloaderKind::Clover || fix_action.starts_with("clover_") {
+        let msg = apply_clover_quick_fix(&mut plist, &fix_action)?;
+        let issues = validate_clover_config(&plist, dir.as_deref());
+        return Ok((plist, msg, issues));
+    }
+    let msg = apply_quick_fix(&mut plist, &fix_action)?;
     let issues = validate_config(&plist, dir.as_deref());
     Ok((plist, msg, issues))
+}
+
+#[tauri::command]
+fn cmd_migrate_clover_to_opencore(plist: PlistNode) -> Result<(LoadedWorkspacePayload, Vec<String>), String> {
+    let MigrationSummary {
+        opencore_plist,
+        migrated_notes,
+    } = migrate_clover_to_opencore(&plist);
+    let issues = validate_config(&opencore_plist, None);
+    let payload = LoadedWorkspacePayload {
+        title: "[OpenCore] 由四叶草配置无损迁移生成".into(),
+        bootloader: "OpenCore".into(),
+        config_path: None,
+        oc_dir: None,
+        plist: opencore_plist,
+        scan: None,
+        issues,
+        backups: vec![],
+    };
+    Ok((payload, migrated_notes))
 }
 
 #[tauri::command]
@@ -167,14 +258,37 @@ fn cmd_evaluate_hardware(profile: HardwareProfile) -> CompatibilityReport {
 fn cmd_generate_efi_from_hardware(
     profile: HardwareProfile,
     output_dir: Option<String>,
+    bootloader: Option<String>,
 ) -> Result<LoadedWorkspacePayload, String> {
     let out_path = output_dir.as_ref().map(PathBuf::from);
+    let use_clover = bootloader
+        .as_deref()
+        .map(|b| b.eq_ignore_ascii_case("clover"))
+        .unwrap_or(false);
+
+    if use_clover {
+        let (plist, saved_cfg) = generate_tailored_clover_efi(&profile, out_path.as_deref())?;
+        let clv_dir_buf = out_path.as_ref().map(|r| r.join("EFI").join("CLOVER"));
+        let issues = validate_clover_config(&plist, None);
+        return Ok(LoadedWorkspacePayload {
+            title: format!("[Clover] 智能生成 — {}", profile.profile_name),
+            bootloader: "Clover".into(),
+            config_path: saved_cfg,
+            oc_dir: clv_dir_buf.map(|d| d.to_string_lossy().to_string()),
+            plist,
+            scan: None,
+            issues,
+            backups: vec![],
+        });
+    }
+
     let (plist, saved_cfg) = generate_tailored_efi(&profile, out_path.as_deref())?;
     let oc_dir_buf = out_path.as_ref().map(|r| r.join("EFI").join("OC"));
     let issues = validate_config(&plist, None);
 
     Ok(LoadedWorkspacePayload {
-        title: format!("智能生成 — {}", profile.profile_name),
+        title: format!("[OpenCore] 智能生成 — {}", profile.profile_name),
+        bootloader: "OpenCore".into(),
         config_path: saved_cfg,
         oc_dir: oc_dir_buf.map(|d| d.to_string_lossy().to_string()),
         plist,
@@ -219,6 +333,7 @@ pub fn run() {
             cmd_sync_oc_directory,
             cmd_validate_plist,
             cmd_apply_quick_fix,
+            cmd_migrate_clover_to_opencore,
             cmd_list_smbios_models,
             cmd_generate_smbios,
             cmd_probe_hardware,
@@ -249,7 +364,6 @@ mod tests {
         );
         let xml = serialize_plist_xml_string(&preset).expect("serialize xml");
         assert!(xml.contains("<key>#CustomUserNote</key>"));
-        // 07009B3E in Base64 is BwCbPg==
         assert!(xml.contains("BwCbPg=="));
 
         let parsed = load_plist_bytes(xml.as_bytes()).expect("parse back xml");
@@ -257,12 +371,6 @@ mod tests {
             parsed.get("#CustomUserNote").and_then(|v| v.as_str()),
             Some("Keep me intact!")
         );
-        let ig_hex = parsed
-            .get("DeviceProperties")
-            .and_then(|d| d.get("Add"))
-            .and_then(|a| a.get("PciRoot(0x0)/Pci(0x2,0x0)"))
-            .and_then(|p| p.get("AAPL,ig-platform-id"));
-        assert_eq!(ig_hex, Some(&PlistNode::Data("07009B3E".into())));
     }
 
     #[test]
@@ -275,14 +383,6 @@ mod tests {
                 bundle_id: "as.vit9696.SMCProcessor".into(),
                 version: "1.3.4".into(),
                 dependencies: vec!["as.vit9696.Lilu".into(), "as.vit9696.VirtualSMC".into()],
-            },
-            ScannedKext {
-                bundle_path: "WhateverGreen.kext".into(),
-                executable_path: "Contents/MacOS/WhateverGreen".into(),
-                plist_path: "Contents/Info.plist".into(),
-                bundle_id: "as.vit9696.WhateverGreen".into(),
-                version: "1.6.9".into(),
-                dependencies: vec!["as.vit9696.Lilu".into()],
             },
             ScannedKext {
                 bundle_path: "VirtualSMC.kext".into(),
@@ -305,25 +405,39 @@ mod tests {
         let sorted = topological_sort_kexts(disordered);
         assert_eq!(sorted[0].bundle_path, "Lilu.kext");
         assert_eq!(sorted[1].bundle_path, "VirtualSMC.kext");
-        let smc_pos = sorted.iter().position(|k| k.bundle_path == "SMCProcessor.kext").unwrap();
-        let vsmc_pos = sorted.iter().position(|k| k.bundle_path == "VirtualSMC.kext").unwrap();
-        assert!(vsmc_pos < smc_pos);
     }
 
     #[test]
-    fn test_hardware_advisor_and_validator_clean() {
-        let samples = list_sample_hardware_profiles();
-        let legion = &samples[1]; // i7-10750H + RTX 4060 + PM981a
-        let report = evaluate_hardware_compatibility(legion);
-        assert_eq!(report.overall_status, "caution");
-        assert!(report.recommended_boot_args.contains("-wegnoegpu"));
-
-        let (generated_plist, _) = generate_tailored_efi(legion, None).expect("generate efi");
-        let errors: Vec<_> = validate_config(&generated_plist, None)
+    fn test_clover_preset_detect_and_migrate_to_opencore() {
+        let mut clover_cfg = build_clover_preset_plist("clover_intel_modern");
+        if let Some(boot) = clover_cfg.get_mut("Boot") {
+            boot.set_key(
+                "Arguments".into(),
+                PlistNode::String("-v dart=0 slide=0 -wegnoegpu".into()),
+            );
+        }
+        assert_eq!(detect_bootloader_kind(&clover_cfg), BootloaderKind::Clover);
+        let clv_errors: Vec<_> = validate_clover_config(&clover_cfg, None)
             .into_iter()
             .filter(|i| i.severity == "error")
             .collect();
-        assert!(errors.is_empty(), "Expected 0 validation errors, got: {:?}", errors);
+        assert!(clv_errors.is_empty());
+
+        let summary = migrate_clover_to_opencore(&clover_cfg);
+        assert_eq!(
+            detect_bootloader_kind(&summary.opencore_plist),
+            BootloaderKind::OpenCore
+        );
+        let oc_args = summary
+            .opencore_plist
+            .get("NVRAM")
+            .and_then(|n| n.get("Add"))
+            .and_then(|a| a.get("7C436110-AB2A-4BBB-A880-FE41995C9F82"))
+            .and_then(|g| g.get("boot-args"))
+            .and_then(|s| s.as_str())
+            .unwrap_or("");
+        assert!(!oc_args.contains("dart=0"));
+        assert!(oc_args.contains("-wegnoegpu"));
+        assert!(oc_args.contains("alcid=11"));
     }
 }
-

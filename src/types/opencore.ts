@@ -53,6 +53,7 @@ export interface BackupSnapshot {
 
 export interface LoadedWorkspacePayload {
   title: string;
+  bootloader?: "OpenCore" | "Clover" | string;
   config_path?: string | null;
   oc_dir?: string | null;
   plist: PlistNode;

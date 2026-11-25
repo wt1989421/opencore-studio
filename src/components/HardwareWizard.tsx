@@ -28,6 +28,7 @@ export const HardwareWizard: React.FC = () => {
   const [profile, setProfile] = useState<HardwareProfile | null>(null);
   const [report, setReport] = useState<CompatibilityReport | null>(null);
   const [scanning, setScanning] = useState(false);
+  const [targetBootloader, setTargetBootloader] = useState<"OpenCore" | "Clover">("OpenCore");
 
   useEffect(() => {
     if (!isTauriRuntime()) return;
@@ -70,14 +71,14 @@ export const HardwareWizard: React.FC = () => {
       outDir = await apiPickEfiFolder();
       if (!outDir) return;
     }
-    const payload = await apiGenerateEfiFromHardware(profile, outDir);
+    const payload = await apiGenerateEfiFromHardware(profile, outDir, targetBootloader);
     loadWorkspace(payload);
     setActiveModule("editor");
     pushToast(
       "success",
       outDir
-        ? `已在 ${outDir}/EFI 生成全套目录结构与专属 config.plist！`
-        : "已按当前硬件规则生成专属 config.plist 并载入可视化编辑器！"
+        ? `已在 ${outDir}/EFI 生成全套 ${targetBootloader} 目录结构与专属 config.plist！`
+        : `已按当前硬件规则生成专属 ${targetBootloader} 配置并载入可视化编辑器！`
     );
   };
 
@@ -181,14 +182,40 @@ export const HardwareWizard: React.FC = () => {
               </div>
             </div>
 
-            <div className="flex flex-wrap gap-2.5">
+            <div className="flex flex-wrap items-center gap-2.5">
+              {/* Target Bootloader Selector */}
+              <div className="flex rounded-xl bg-zinc-900/90 border border-zinc-700 p-1 text-xs">
+                <button
+                  type="button"
+                  onClick={() => setTargetBootloader("OpenCore")}
+                  className={`px-3 py-1.5 rounded-lg font-medium transition ${
+                    targetBootloader === "OpenCore"
+                      ? "bg-blue-600 text-white"
+                      : "text-zinc-400 hover:text-zinc-200"
+                  }`}
+                >
+                  OpenCore (推荐)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTargetBootloader("Clover")}
+                  className={`px-3 py-1.5 rounded-lg font-medium transition ${
+                    targetBootloader === "Clover"
+                      ? "bg-emerald-600 text-white"
+                      : "text-zinc-400 hover:text-zinc-200"
+                  }`}
+                >
+                  🍀 四叶草 Clover
+                </button>
+              </div>
+
               <button
                 type="button"
                 onClick={() => handleGenerateIntoEditor(false)}
                 className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold text-white shadow-lg shadow-emerald-600/20 transition"
               >
                 <Sparkles className="w-4 h-4" />
-                一键生成配置并载入编辑器
+                一键生成 {targetBootloader} 配置
               </button>
               <button
                 type="button"
@@ -196,7 +223,7 @@ export const HardwareWizard: React.FC = () => {
                 className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-xs font-semibold text-zinc-100 transition"
               >
                 <FolderOutput className="w-4 h-4 text-blue-400" />
-                生成完整 EFI 目录到磁盘...
+                导出完整 EFI 目录...
               </button>
             </div>
           </div>

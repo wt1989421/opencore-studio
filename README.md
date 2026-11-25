@@ -1,6 +1,11 @@
-# OpenCore Studio — 黑苹果一站式配置工作台
+# OpenCore Studio — 黑苹果一站式配置工作台 (OpenCore + 四叶草 Clover 双引擎)
 
-基于 **Tauri v2 + Rust + React 19 + TypeScript + Tailwind CSS v4** 构建的跨平台（macOS / Windows）黑苹果全流程桌面工具。
+基于 **Tauri v2 + Rust + React 19 + TypeScript + Tailwind CSS v4** 构建的跨平台（Windows / macOS）黑苹果全流程桌面工具，同时支持 **OpenCore (OC)** 与 **四叶草 (Clover Bootloader)** 双引导器。
+
+## 核心特性
+
+- **双引导引擎自动识别与切换**：打开任意 `EFI` 文件夹或 `config.plist` 时自动识别是 `OpenCore` 还是 `Clover`，也可在左侧边栏一键切换双模式预设。
+- **四叶草 Clover 全套可视化编辑 & 一键迁移转 OpenCore**：支持 Clover 的 `ACPI (DSDT Fixes / SortedOrder)`、`Boot`、`Devices`、`GUI`、`Graphics`、`KernelAndKextPatches`、`Quirks (r5123+)`、`RtVariables`、`SMBIOS` 全可视化修改，并支持**保留原机三码与设备注入一键无损转换为 OpenCore 配置**！
 
 ## 已实现三大核心模块
 
